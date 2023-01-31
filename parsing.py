@@ -33,14 +33,6 @@ class Buffer:
 
 
 @dataclass
-class Token:
-    kind: str
-    buffer: Buffer
-    pos: Position
-    length: int
-
-
-@dataclass
 class ParsingErr:
     message: str
     buffer: Buffer
@@ -55,6 +47,24 @@ class ParsingError(Exception):
 
     def __str__(self) -> str:
         return self.err.message
+
+
+@dataclass
+class Token:
+    kind: str
+    buffer: Buffer
+    pos: Position
+    length: int
+
+    @property
+    def text(self) -> str:
+        return self.buffer.contents[self.pos.index : self.pos.index + self.length]
+
+    def to_err(self, message: str) -> ParsingErr:
+        return ParsingErr(message, self.buffer, self.pos, self.length)
+
+    def to_error(self, message: str) -> ParsingError:
+        return ParsingError(self.to_err(message))
 
 
 @dataclass
@@ -76,15 +86,21 @@ class OptToken:
     def unmatch(self) -> bool:
         return self.kind is None
 
+    def to_err(self, message: str) -> ParsingErr:
+        return ParsingErr(message, self.buffer, self.pos, self.length)
+
+    def to_error(self, message: str) -> ParsingError:
+        return ParsingError(self.to_err(message))
+
     def unwrap(self) -> Token:
         if self.kind is None:
-            print(repr(self.text))
-            print(self.pos)
-            raise ParsingError(ParsingErr("unexpected data while lexing", self.buffer, self.pos, self.length))
+            raise self.to_error("unexpected data while lexing")
         return Token(self.kind, self.buffer, self.pos, self.length)
 
 
-def iter_opt_tokens(pattern: re.Pattern[str], filename: str, contents: str) -> Iterator[OptToken]:
+def iter_opt_tokens(
+    pattern: re.Pattern[str], filename: str, contents: str
+) -> Iterator[OptToken]:
     buffer = Buffer(filename, contents)
     pos = Position(0, 1, 0)
     for mo in re.finditer(pattern, contents):
@@ -111,5 +127,7 @@ def unwrapped_non_blank(it: Iterable[OptToken]) -> Iterator[Token]:
         yield t.unwrap()
 
 
-def iter_tokens(pattern: re.Pattern[str], filename: str, contents: str) -> Iterator[Token]:
+def iter_tokens(
+    pattern: re.Pattern[str], filename: str, contents: str
+) -> Iterator[Token]:
     yield from unwrapped_non_blank(iter_opt_tokens(pattern, filename, contents))
