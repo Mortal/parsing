@@ -37,8 +37,9 @@ class Parenthesized:
     right: Token
 
 
-def parse_python_step_one(tokens: Iterable[Token]) -> Iterator[Token | Parenthesized]:
-    parens = {"{": "}", "[": "]", "(": ")"}
+def match_parens(
+    tokens: Iterable[Token], parens: dict[str, str]
+) -> Iterator[Token | Parenthesized]:
     paren_stack: list[tuple[str, Token, list[Token | Parenthesized]]] = []
     for tok in tokens:
         text = tok.text
@@ -71,39 +72,61 @@ def parse_python_step_one(tokens: Iterable[Token]) -> Iterator[Token | Parenthes
 
 
 @dataclass
+class Line:
+    tokens: list["Token | Parenthesized"]
+
+
+@dataclass
 class Block:
     indent: str
-    tokens: list["Token | Parenthesized | Block"]
+    tokens: list["Line | Block"]
 
 
-def parse_python_step_two(tokens: Iterable[Token | Parenthesized]) -> Iterator[Token | Parenthesized | Block]:
+def flatten(tokens: Iterable[Token | Parenthesized | Line | Block]) -> Iterator[Token]:
+    for tok in tokens:
+        if isinstance(tok, Token):
+            yield tok
+        elif isinstance(tok, Parenthesized):
+            yield tok.left
+            yield from flatten(tok.contents)
+            yield tok.right
+        elif isinstance(tok, Line):
+            yield from flatten(tok.tokens)
+        elif isinstance(tok, Block):
+            yield from flatten(tok.tokens)
+
+
+def identify_python_blocks(
+    tokens: Iterable[Token | Parenthesized],
+) -> Iterator[Line | Block]:
     indent_stack: list[Block] = []
-    got_colon = False
-    expect_indent = False
+    line: list[Token | Parenthesized] = []
+    got_colon: Token | None = None
+    expect_indent: Token | None = None
     for tok in tokens:
         if isinstance(tok, Parenthesized):
-            if indent_stack:
-                indent_stack[-1].tokens.append(tok)
-            else:
-                yield tok
+            line.append(tok)
             continue
 
         text = tok.text
 
         if tok.kind == "newline":
             expect_indent = got_colon
-            if indent_stack:
-                indent_stack[-1].tokens.append(tok)
-            else:
-                yield tok
+            if line:
+                line_object = Line(line[:])
+                del line[:]
+                if indent_stack:
+                    indent_stack[-1].tokens.append(line_object)
+                else:
+                    yield line_object
             continue
 
         if tok.kind == "indent":
-            if expect_indent:
+            if expect_indent is not None:
                 current_indent = len(indent_stack[-1].indent) if indent_stack else 0
                 if len(text) <= current_indent:
-                    raise tok.to_error("expected indent")
-                indent_stack.append(Block(text, [tok]))
+                    raise expect_indent.to_error("expected indent after colon")
+                indent_stack.append(Block(text, []))
             else:
                 while indent_stack and len(text) < len(indent_stack[-1].indent):
                     t = indent_stack.pop()
@@ -113,7 +136,6 @@ def parse_python_step_two(tokens: Iterable[Token | Parenthesized]) -> Iterator[T
                         yield t
                 if not indent_stack or len(text) > len(indent_stack[-1].indent):
                     raise tok.to_error("unexpected indent")
-                indent_stack[-1].tokens.append(tok)
             continue
 
         if tok.pos.column == 0:
@@ -125,13 +147,34 @@ def parse_python_step_two(tokens: Iterable[Token | Parenthesized]) -> Iterator[T
                     yield t
 
         if text == ":":
-            got_colon = True
+            got_colon = tok
         else:
-            got_colon = False
+            got_colon = None
+        line.append(tok)
+    if expect_indent is not None:
+        raise expect_indent.to_error("expected indent after colon at eof")
+    if got_colon is not None:
+        raise got_colon.to_error("expected indent after colon at eof with no eol")
+    if line:
+        line_object = Line(line[:])
+        del line[:]
         if indent_stack:
-            indent_stack[-1].tokens.append(tok)
+            indent_stack[-1].tokens.append(line_object)
         else:
-            yield tok
+            yield line_object
+    while indent_stack:
+        t = indent_stack.pop()
+        if indent_stack:
+            indent_stack[-1].tokens.append(t)
+        else:
+            yield t
+
+
+def dump_identified_blocks(tokens: Iterable[Line | Block], indent: str = "") -> None:
+    for o in tokens:
+        print("%s%s at %s" % (indent, type(o).__name__, next(iter(flatten([o]))).pos))
+        if isinstance(o, Block):
+            dump_identified_blocks(o.tokens, o.indent)
 
 
 def main() -> None:
@@ -139,7 +182,10 @@ def main() -> None:
     with open(args.filename) as fp:
         contents = fp.read()
     try:
-        list(parse_python_step_two(parse_python_step_one(iter_tokens(python_lexer, args.filename, contents))))
+        lexer_output = iter_tokens(python_lexer, args.filename, contents)
+        matched_parens = match_parens(lexer_output, {"{": "}", "[": "]", "(": ")"})
+        identified_blocks = identify_python_blocks(matched_parens)
+        dump_identified_blocks(identified_blocks)
     except ParsingError as e:
         traceback.print_exc()
         lines = e.err.buffer.contents.splitlines()
