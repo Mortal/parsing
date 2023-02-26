@@ -221,14 +221,7 @@ def main() -> None:
         list(tokens)
     except ParsingError as e:
         traceback.print_exc()
-        lines = e.err.buffer.contents.splitlines()
-        print('File "%s", line %s' % (e.err.buffer.filename, e.err.pos.lineno))
-        print(lines[e.err.pos.lineno - 1])
-        print(" " * e.err.pos.column + "^" + "~" * (e.err.length - 1))
-        print(
-            "%s:%s:%s: %s"
-            % (e.err.buffer.filename, e.err.pos.lineno, e.err.pos.column + 1, e)
-        )
+        print(e.err.message_and_input_line())
         raise SystemExit(1)
 
 

@@ -31,6 +31,14 @@ class Buffer:
     def __repr__(self) -> str:
         return "<Buffer %r>" % (self.filename,)
 
+    def get_line_from_position(self, pos: Position) -> str:
+        line_start = pos.index - pos.column
+        try:
+            line_end: int | None = self.contents.index("\n", line_start)
+        except ValueError:
+            line_end = None
+        return self.contents[line_start:line_end]
+
 
 @dataclass
 class ParsingErr:
@@ -38,6 +46,17 @@ class ParsingErr:
     buffer: Buffer
     pos: Position
     length: int
+
+    def message_and_input_line(self) -> str:
+        return "\n".join(
+            [
+                'File "%s", line %s' % (self.buffer.filename, self.pos.lineno),
+                self.buffer.get_line_from_position(self.pos),
+                " " * self.pos.column + "^" + "~" * (self.length - 1),
+                "%s:%s:%s: %s"
+                % (self.buffer.filename, self.pos.lineno, self.pos.column + 1, self.message),
+            ]
+        )
 
 
 class ParsingError(Exception):
