@@ -49,6 +49,15 @@ class ParsingError(Exception):
         return self.err.message
 
 
+def strip_count_if_non_empty(text: str, pos: Position) -> tuple[Position, int]:
+    u = text.lstrip()
+    new_length = len(u.rstrip())
+    if not new_length or new_length == len(text):
+        return pos, len(text)
+    new_pos = pos.advanced(text, 0, len(text) - len(u))
+    return new_pos, new_length
+
+
 @dataclass
 class Token:
     kind: str
@@ -65,6 +74,12 @@ class Token:
 
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(self.to_err(message))
+
+    def strip_if_non_empty(self) -> "Token":
+        pos, length = strip_count_if_non_empty(self.text, self.pos)
+        if (pos, length) == (self.pos, self.length):
+            return self
+        return Token(self.kind, self.buffer, pos, length)
 
 
 @dataclass
@@ -92,9 +107,15 @@ class OptToken:
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(self.to_err(message))
 
+    def strip_if_non_empty(self) -> "OptToken":
+        pos, length = strip_count_if_non_empty(self.text, self.pos)
+        if (pos, length) == (self.pos, self.length):
+            return self
+        return OptToken(self.kind, self.buffer, pos, length)
+
     def unwrap(self) -> Token:
         if self.kind is None:
-            raise self.to_error("unexpected data while lexing")
+            raise self.strip_if_non_empty().to_error("unexpected data while lexing")
         return Token(self.kind, self.buffer, self.pos, self.length)
 
 
