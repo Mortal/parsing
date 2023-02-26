@@ -151,9 +151,8 @@ def iter_opt_tokens(
             yield OptToken(None, buffer, pos, i - pos.index)
             pos = pos.advanced(contents, pos.index, i)
         i = mo.end()
-        if pos.index != i:
-            yield OptToken(kind, buffer, pos, i - pos.index)
-            pos = pos.advanced(contents, pos.index, i)
+        yield OptToken(kind, buffer, pos, i - pos.index)
+        pos = pos.advanced(contents, pos.index, i)
     i = len(contents)
     if pos.index != i:
         yield OptToken(None, buffer, pos, i - pos.index)
