@@ -73,6 +73,8 @@ def strip_count_if_non_empty(text: str, pos: Position) -> tuple[Position, int]:
     new_length = len(u.rstrip())
     if not new_length or new_length == len(text):
         return pos, len(text)
+    if len(text) == len(u):
+        return pos, new_length
     new_pos = pos.advanced(text, 0, len(text) - len(u))
     return new_pos, new_length
 

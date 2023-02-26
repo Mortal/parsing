@@ -12,12 +12,12 @@ python_lexer = re.compile(
     r"""
 (?P<name>[a-zA-Z_][a-zA-Z0-9_]*)
 |(?P<newline>\n)
-|(?P<blankline>^[ \t]+$)
 |(?P<indent>^[ \t]+)
 |(?P<number>[0-9]+)
 |(?P<comment>\#.*)
 |(?P<backslash>\\)
-|(?P<op>!=|[<>]=?|->|-|[][(){},=:@.|%*/+^&])
+|(?P<semicolon>;)
+|(?P<op>!=|[<>]=?|->|-|[][(){},=:@.|%*/+^&~])
 |(?P<string>
     "["]"(?:\\(?:.|\n)|[^\\"]|"(?:[^"]|"[^"]))*"["]"
     |'[']'(?:\\(?:.|\n)|[^\\']|'(?:[^']|'[^']))*'[']'
@@ -75,7 +75,7 @@ def identify_python_blocks(
     got_backslash: Token | None = None
     expect_indent: Token | None = None
     for tok in tokens:
-        if got_indent is not None and isinstance(tok, Token) and tok.kind in ("newline", "comment", "backslash"):
+        if got_indent is not None and isinstance(tok, Token) and tok.kind in ("newline", "comment"):
             line.append(got_indent)
             got_indent = None
         if got_indent is not None:
@@ -83,7 +83,7 @@ def identify_python_blocks(
             if expect_indent is not None:
                 current_indent = len(indent_stack[-1].indent) if indent_stack else 0
                 if len(indent_text) <= current_indent:
-                    raise expect_indent.to_error("expected indent after colon")
+                    raise expect_indent.to_error("expected indent after colon but got %s" % expect_indent.kind)
                 indent_stack.append(Block(indent_text, []))
                 expect_indent = None
             else:
@@ -159,7 +159,7 @@ def identify_python_blocks(
                 else:
                     yield t
             if expect_indent is not None:
-                raise tok.to_error("expected indent after colon")
+                raise tok.to_error("expected indent after colon but got %r" % tok.kind)
 
         if text == ":":
             got_colon = tok
@@ -188,10 +188,12 @@ def identify_python_blocks(
 
 def dump_identified_blocks(tokens: Iterable[Line | Block], indent: str = "") -> Iterator[Line | Block]:
     for o in tokens:
-        pos = next(iter(flatten([o]))).pos
-        print("%s%s at %s" % (indent, type(o).__name__, pos))
-        if pos.lineno == 427:
-            print(repr(o))
+        first_tok = next(iter(flatten([o])), None)
+        if first_tok is None:
+            print("blank block?")
+            yield o
+            continue
+        print("%s%s at %s" % (indent, type(o).__name__, first_tok.pos))
         if isinstance(o, Block):
             dump_identified_blocks(o.tokens, o.indent)
         yield o
@@ -201,7 +203,9 @@ def check_contiguous_tokens(tokens: Iterable[Token]) -> Iterator[Token]:
     p = Position(0, 1, 0)
     for o in tokens:
         if o.pos.index != p.index:
-            raise o.to_error(f"Missing bit from {p} to {o.pos} in output")
+            missing = o.buffer.contents[p.index:o.pos.index]
+            if missing.strip():
+                raise o.to_error(f"Missing bit {missing!r} from {p} to {o.pos} in output")
         p = o.pos.advanced(o.text, 0, o.length)
         yield o
 
@@ -209,7 +213,11 @@ def check_contiguous_tokens(tokens: Iterable[Token]) -> Iterator[Token]:
 def main() -> None:
     args = parser.parse_args()
     with open(args.filename) as fp:
-        contents = fp.read()
+        try:
+            contents = fp.read()
+        except UnicodeDecodeError as e:
+            print(args.filename, e)
+            raise SystemExit(1)
     try:
         lexer_output = iter_tokens(python_lexer, args.filename, contents)
         matched_parens = match_parens(lexer_output, {"{": "}", "[": "]", "(": ")"})
