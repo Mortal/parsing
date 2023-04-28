@@ -5,7 +5,13 @@ from typing import Iterator, Iterable
 from parsing import ParsingError, Token, Position
 from pythonparser.tokens import iter_python_tokens
 from pythonparser.parens import match_python_parens
-from pythonparser.lines import identify_python_lines, identify_python_blocks, flatten, Line, Block
+from pythonparser.lines import (
+    identify_python_lines,
+    identify_python_blocks,
+    flatten,
+    Line,
+    Block,
+)
 
 
 parser = argparse.ArgumentParser()
@@ -13,7 +19,9 @@ parser.add_argument("--no-output", "-n", action="store_true")
 parser.add_argument("filename", nargs="+")
 
 
-def dump_identified_blocks(tokens: Iterable[Line | Block], indent: str = "") -> Iterator[Line | Block]:
+def dump_identified_blocks(
+    tokens: Iterable[Line | Block], indent: str = ""
+) -> Iterator[Line | Block]:
     for o in tokens:
         print("%s%s at %s %s" % (indent, type(o).__name__, o.start, o.end))
         if isinstance(o, Block):
@@ -25,9 +33,11 @@ def check_contiguous_tokens(tokens: Iterable[Token]) -> Iterator[Token]:
     p = Position(0, 1, 0)
     for o in tokens:
         if o.start.index != p.index:
-            missing = o.buffer.contents[p.index:o.start.index]
+            missing = o.buffer.contents[p.index : o.start.index]
             if missing.strip():
-                raise o.to_error(f"Missing bit {missing!r} from {p} to {o.start} in output")
+                raise o.to_error(
+                    f"Missing bit {missing!r} from {p} to {o.start} in output"
+                )
         p = o.start.advanced(o.text, 0, o.length)
         yield o
 

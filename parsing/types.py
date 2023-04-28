@@ -60,13 +60,23 @@ class ParsingErr:
     length: int
 
     def message_and_input_line(self) -> str:
+        line = self.buffer.get_line_from_position(self.span.start)
+        pref = line[: self.span.start.column]
+        pref_strip = pref.lstrip()
+        pref_ws_count = len(pref) - len(pref_strip)
+        indent = 4 * " "
         return "\n".join(
             [
                 'File "%s", line %s' % (self.buffer.filename, self.span.start.lineno),
-                self.buffer.get_line_from_position(self.span.start),
-                " " * self.span.start.column + "^" + "~" * (self.length - 1),
+                indent + line[pref_ws_count:],
+                indent + len(pref_strip) * " " + "^" + "~" * (self.length - 1),
                 "%s:%s:%s: %s"
-                % (self.buffer.filename, self.span.start.lineno, self.span.start.column + 1, self.message),
+                % (
+                    self.buffer.filename,
+                    self.span.start.lineno,
+                    self.span.start.column + 1,
+                    self.message,
+                ),
             ]
         )
 

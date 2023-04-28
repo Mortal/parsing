@@ -172,7 +172,12 @@ def unwrapped_non_blank(it: Iterable[OptToken]) -> Iterator[Token]:
 
 
 def iter_opt_tokens(
-    pattern: re.Pattern[str], filename: str | None = None, contents: str | None = None, *, buffer: Buffer | None = None, pos: Position | None = None
+    pattern: re.Pattern[str],
+    filename: str | None = None,
+    contents: str | None = None,
+    *,
+    buffer: Buffer | None = None,
+    pos: Position | None = None
 ) -> Iterator[OptToken]:
     if buffer is None:
         assert filename is not None
@@ -184,7 +189,12 @@ def iter_opt_tokens(
 
 
 def iter_tokens(
-    pattern: re.Pattern[str], filename: str | None = None, contents: str | None = None, *, buffer: Buffer | None = None, pos: Position | None = None
+    pattern: re.Pattern[str],
+    filename: str | None = None,
+    contents: str | None = None,
+    *,
+    buffer: Buffer | None = None,
+    pos: Position | None = None
 ) -> Iterator[Token]:
     if buffer is None:
         assert filename is not None
@@ -218,5 +228,7 @@ def iter_opt_tokens_change_encoding(
 def iter_tokens_change_encoding(
     pattern: re.Pattern[str], filename: str, line_bytes: Iterable[bytes]
 ) -> tuple[Iterator[Token], Callable[[str], None]]:
-    tokens, change_encoding = iter_opt_tokens_change_encoding(pattern, filename, line_bytes)
+    tokens, change_encoding = iter_opt_tokens_change_encoding(
+        pattern, filename, line_bytes
+    )
     return unwrapped_non_blank(tokens), change_encoding

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterator, Iterable
+from typing import Iterator, Iterable, Sequence
 
 from parsing import Token, Position, Parenthesized
 
@@ -73,7 +73,13 @@ def identify_python_lines(
             elif tok.kind == "newline":
                 line.append(tok)
                 if not got_backslash:
-                    line_object = Line(line[:], indent=got_indent, colon=got_colon, newline=tok, first_non_blank=first_non_blank)
+                    line_object = Line(
+                        line[:],
+                        indent=got_indent,
+                        colon=got_colon,
+                        newline=tok,
+                        first_non_blank=first_non_blank,
+                    )
                     del line[:]
                     yield line_object
                     # Reset state
@@ -108,7 +114,13 @@ def identify_python_lines(
     if got_backslash:
         raise got_backslash.to_error("unexpected EOF after backslash")
     if line:
-        line_object = Line(line[:], indent=got_indent, colon=got_colon, newline=None, first_non_blank=first_non_blank)
+        line_object = Line(
+            line[:],
+            indent=got_indent,
+            colon=got_colon,
+            newline=None,
+            first_non_blank=first_non_blank,
+        )
         yield line_object
 
 
@@ -136,7 +148,9 @@ def identify_python_blocks(
                         indent_stack[-1].tokens.append(t)
                     else:
                         yield t
-                if len(indent_text) > (len(indent_stack[-1].indent) if indent_stack else 0):
+                if len(indent_text) > (
+                    len(indent_stack[-1].indent) if indent_stack else 0
+                ):
                     raise line.first_non_blank.to_error("unexpected indent")
             expect_indent = line.colon
         if indent_stack:

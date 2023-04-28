@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Iterator, Iterable
 
 from .tokens import Token, Position
+from .types import Position, Span, Buffer, ParsingErr, ParsingError
 
 
 @dataclass
@@ -11,12 +12,42 @@ class Parenthesized:
     right: Token
 
     @property
+    def kind(self) -> str:
+        return "parenthesized"
+
+    @property
     def start(self) -> Position:
         return self.left.start
 
     @property
     def end(self) -> Position:
         return self.right.end
+
+    @property
+    def span(self) -> Span:
+        return Span(self.start, self.end)
+
+    @property
+    def index(self) -> int:
+        return self.start.index
+
+    @property
+    def length(self) -> int:
+        return self.end.index - self.start.index
+
+    @property
+    def text(self) -> str | None:
+        return None
+
+    @property
+    def buffer(self) -> Buffer:
+        return self.left.buffer
+
+    def to_err(self, message: str) -> ParsingErr:
+        return ParsingErr(message, self.buffer, self.span, self.length)
+
+    def to_error(self, message: str) -> ParsingError:
+        return ParsingError(self.to_err(message))
 
 
 def match_parens(
