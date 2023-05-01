@@ -200,6 +200,9 @@ def parse_python_operand(p: LineParser) -> Operand:
 def parse_python_operands(p: LineParser) -> list[tuple[MultiToken, Operand]]:
     operands: list[tuple[MultiToken, Operand]] = []
     while (op := parse_python_operator(p)) is not None:
+        if op[0].text == "," and not p.has_next:
+            # Trailing comma
+            break
         operands.append((op, parse_python_operand(p)))
     return operands
 
