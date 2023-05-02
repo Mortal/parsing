@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Iterator, Iterable, Sequence
 
-from parsing import Token, Position, Parenthesized
+from parsing import Token, Position, Parenthesized, IterParenthesized
 
 
 @dataclass
@@ -54,7 +54,7 @@ def flatten(tokens: Iterable[Token | Parenthesized | Line | Block]) -> Iterator[
 
 
 def identify_python_lines(
-    tokens: Iterable[Token | Parenthesized],
+    tokens: Iterable[Token | Parenthesized | IterParenthesized],
 ) -> Iterator[Line]:
     line: list[Token | Parenthesized] = []
     got_indent: Token | None = None
@@ -62,6 +62,8 @@ def identify_python_lines(
     got_backslash: Token | None = None
     first_non_blank: Token | None = None
     for tok in tokens:
+        if isinstance(tok, IterParenthesized):
+            tok = tok.collect()
         if isinstance(tok, Token):
             if tok.kind == "indent":
                 if line:

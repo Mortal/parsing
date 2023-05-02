@@ -20,16 +20,16 @@ class Parenthesized:
         return self.left.start
 
     @property
+    def index(self) -> int:
+        return self.start.index
+
+    @property
     def end(self) -> Position:
         return self.right.end
 
     @property
     def span(self) -> Span:
         return Span(self.start, self.end)
-
-    @property
-    def index(self) -> int:
-        return self.start.index
 
     @property
     def length(self) -> int:
@@ -50,35 +50,74 @@ class Parenthesized:
         return ParsingError(self.to_err(message))
 
 
-def match_parens(
-    tokens: Iterable[Token], parens: dict[str, str]
-) -> Iterator[Token | Parenthesized]:
-    paren_stack: list[tuple[str, Token, list[Token | Parenthesized]]] = []
+@dataclass
+class IterParenthesized:
+    left: Token
+    tokens: "Iterator[Token | IterParenthesized]"
+
+    @property
+    def kind(self) -> str:
+        return "parenthesized"
+
+    @property
+    def start(self) -> Position:
+        return self.left.start
+
+    @property
+    def index(self) -> int:
+        return self.start.index
+
+    def collect(self) -> Parenthesized:
+        toks: list[Token | Parenthesized] = []
+        try:
+            t = next(self.tokens)
+        except StopIteration:
+            raise self.left.to_error("BUG: no tokens?")
+        right: Token | Parenthesized = t.collect() if isinstance(t, IterParenthesized) else t
+        for t in self.tokens:
+            toks.append(right)
+            right = t.collect() if isinstance(t, IterParenthesized) else t
+        assert isinstance(right, Token)
+        return Parenthesized(self.left, toks, right)
+
+    @property
+    def text(self) -> str | None:
+        return None
+
+
+def iter_match_parens(
+    tokens: Iterable[Token], parens: dict[str, str], until: str | None = None
+) -> Iterator[Token | IterParenthesized]:
     for tok in tokens:
         text = tok.text
 
+        if text == until:
+            yield tok
+            break
+
         if text in parens:
-            paren_stack.append((parens[text], tok, []))
+            it = iter_match_parens(tokens, parens, parens[text])
+            yield IterParenthesized(tok, it)
+            # Exhaust 'it' before continuing in case the caller doesn't
+            exhausted = True
+            for t in it:
+                exhausted = False
             continue
 
         if text in parens.values():
-            if not paren_stack:
-                raise tok.to_error("unmatched parenthesis")
-            if paren_stack[-1][0] != text:
+            if until:
                 raise tok.to_error(
-                    "incorrectly matched parentheses: %s%s"
-                    % (paren_stack[-1][1].text, text)
+                    f"incorrectly matched parentheses: expected '{until}'"
                 )
-            paren = Parenthesized(paren_stack[-1][1], paren_stack[-1][2], tok)
-            paren_stack.pop()
-            if paren_stack:
-                paren_stack[-1][2].append(paren)
-            else:
-                yield paren
-            continue
-
-        if paren_stack:
-            paren_stack[-1][2].append(tok)
-            continue
+            raise tok.to_error("unexpected parenthesis")
 
         yield tok
+
+
+def match_parens(
+    tokens: Iterable[Token], parens: dict[str, str]
+) -> Iterator[Token | Parenthesized]:
+    return (
+        t.collect() if isinstance(t, IterParenthesized) else t
+        for t in iter_match_parens(tokens, parens)
+    )

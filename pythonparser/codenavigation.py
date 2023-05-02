@@ -1,3 +1,4 @@
+import json
 from typing import Iterator, Sequence, Iterable, Callable
 
 import pythonparser
@@ -31,7 +32,7 @@ def vnoremap(key: str):
 
 def identify_buffer_lines(buffer) -> Iterator[Line]:
     lexer_output = pythonparser.iter_python_tokens(buffer.name, "\n".join(buffer) + "\n")
-    matched_parens = pythonparser.match_python_parens(lexer_output)
+    matched_parens = pythonparser.iter_match_python_parens(lexer_output)
     return pythonparser.identify_python_lines(matched_parens)
 
 
@@ -45,11 +46,37 @@ def plug_select_expression_op(vim) -> None:
     select_expression(vim, row, col, row, col)
 
 
+def create_positions(span: Span) -> list[int | tuple[int] | tuple[int, int] | tuple[int, int, int]]:
+    "Convert a Span into something suitable for vim's matchaddpos."
+    positions: list[int | tuple[int] | tuple[int, int] | tuple[int, int, int]] = []
+    if span.start.lineno == span.end.lineno:
+        if span.end.column - span.start.column <= 1:
+            # "The first number is the line number, the
+            #  second one is the column number (first column is 1, the value
+            #  must correspond to the byte index as |col()| would return)."
+            return [(span.start.lineno, span.start.column + 1)]
+        # "As above, but the third number gives the
+        #  length of the highlight in bytes."
+        return [(span.start.lineno, span.start.column + 1, span.end.column - span.start.column + 1)]
+    return [
+        (span.start.lineno, span.start.column, 2 ** 30),
+        # "A number.  This whole line will be highlighted."
+        *range(span.start.lineno + 1, span.end.lineno),
+        (span.end.lineno, 1, span.end.column)
+    ]
+
+
 @vnoremap(r"\e")
 def plug_select_expression_visual(vim) -> None:
     r1, c1 = vim.current.buffer.mark("<")
     r2, c2 = vim.current.buffer.mark(">")
-    select_expression(vim, r1, c1, r2, c2 + 1)
+    try:
+        select_expression(vim, r1, c1, r2, c2 + 1)
+    except ParsingError as e:
+        positions = create_positions(e.err.span)
+        vim.command(f'call matchaddpos("PypError", {json.dumps(positions)})')
+        vim.command(f'normal! {e.err.span.start.lineno}G')
+        raise
 
 
 def select_expression(vim, row1: int, col1: int, row2: int, col2: int) -> None:
@@ -78,16 +105,26 @@ def select_expression(vim, row1: int, col1: int, row2: int, col2: int) -> None:
         # TODO: Better handling of trailers.
         # Parenthesized trailer, selection properly inside: Recurse.
         # Otherwise, select from atom up until trailer.
-        for p in (operand.prefixes, [[operand.atom]], operand.trailers):
-            for n in p:
+        if isinstance(operand.atom, Parenthesized):
+            if inside1(operand.atom.left.end) and inside2(operand.atom.right.start):
+                return visit_line(operand.atom.tokens) or Span(operand.atom.tokens[0].start, operand.atom.tokens[-1].end)
+        end = operand.atom.end
+        if not inside2(end):
+            for n in operand.trailers:
                 for m in n:
-                    if inside1(m.start) and inside2(m.end):
-                        if isinstance(m, Parenthesized):
-                            s = visit_line(m.tokens)
-                            if s is not None:
-                                return s
-                        return Span(m.start, m.end)
-        return Span(operand.start, operand.end)
+                    if isinstance(m, Parenthesized):
+                        if inside1(m.left.end) and inside2(m.right.start):
+                            return visit_line(m.tokens) or Span(m.tokens[0].start, m.tokens[-1].end)
+                if inside2(n[-1].end):
+                    end = n[-1].end
+                    break
+        start = operand.atom.start
+        if not inside1(start):
+            for n in operand.prefixes[::-1]:
+                if inside1(n[0].start):
+                    start = n[0].start
+                    break
+        return Span(start, end)
 
     def visit_binop(binop: Binop) -> Span:
         if inside2(binop.left.end) or not binop.operands:
@@ -267,5 +304,11 @@ def plug_select_class(vim) -> None:
 
 
 def load_vimplugin(vim) -> None:
+    vim.command("""\
+if !hlexists('PypError')
+    highlight link PypError SpellBad
+endif
+""")
+
     for c in _init_commands:
         vim.command(c)

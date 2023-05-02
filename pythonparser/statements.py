@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Sequence
 
-from parsing import Token, Parenthesized, ParsingErr, ParsingError, Position
+from parsing import Token, IterParenthesized, Parenthesized, ParsingErr, ParsingError, Position
 
 
 MultiToken = list[Token | Parenthesized]
@@ -31,7 +31,8 @@ class LineParser:
     @property
     def next(self) -> Token | Parenthesized:
         assert self.has_next
-        return self.tokens[self.i]
+        t = self.tokens[self.i]
+        return t.collect() if isinstance(t, IterParenthesized) else t
 
     @property
     def next_opt(self) -> Token | Parenthesized | None:
