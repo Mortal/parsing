@@ -221,6 +221,55 @@ def select_expression(vim, row1: int, col1: int, row2: int, col2: int) -> None:
         vim.current.window.cursor = r2, c2 - 1
 
 
+@onoremap(r"\a")
+@vnoremap(r"\a")
+def plug_select_argument(vim) -> None:
+    identified_lines = identify_buffer_lines(vim.current.buffer)
+    row, col = vim.current.window.cursor
+    try:
+        myline = next(
+            line
+            for line in identified_lines
+            if line.tokens
+            and line.tokens[0].start.lineno <= row
+            and row < line.tokens[-1].end.lineno
+        )
+    except StopIteration:
+        return
+
+    row1, col1 = vim.current.window.cursor
+    row2, col2 = row1, col1
+
+    def visit_line(tokens: Sequence[Token | Parenthesized]) -> Span | None:
+        p = LineParser(tokens).skip_whitespace()
+        if not p.has_next:
+            return
+        a = p.next.start
+        while p.has_next:
+            n = p.skip()
+            r1, c1 = n.start.lineno, n.start.column
+            r2, c2 = n.end.lineno, n.end.column
+            if not (row2, col2) <= (r2, c2):
+                return None
+            if (r1, c1) <= (row1, col1):
+                if isinstance(n, Parenthesized):
+                    return visit_line(n.tokens[1:-1])
+                return visit_binop(n)
+        return None
+
+    sp = visit_line(myline.tokens)
+    if sp is None:
+        return
+    r1, c1 = sp.start.lineno, sp.start.column
+    r2, c2 = sp.end.lineno, sp.end.column
+    vim.current.window.cursor = r1, c1
+    if c2 == 0:
+        vim.command(f"normal! v{r2-1}G$")
+    else:
+        vim.command("normal! v")
+        vim.current.window.cursor = r2, c2 - 1
+
+
 @onoremap(r"\l")
 @vnoremap(r"\l")
 def plug_select_line(vim) -> None:
