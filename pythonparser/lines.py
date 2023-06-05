@@ -175,3 +175,36 @@ def identify_python_blocks(
             indent_stack[-1].tokens.append(t)
         else:
             yield t
+
+
+def fixup_end_of_block(lines: list[Line | Block]) -> None:
+
+    def scrape_end(lines: list[Line | Block], indent: str) -> list[Line | Block]:
+        i = len(lines)
+        while i > 0:
+            c = lines[i-1]
+            if not isinstance(c, Line):
+                break
+            if c.first_non_blank is not None:
+                break
+            ind = c.indent
+            if ind is not None and len(ind.text) >= len(indent):
+                # Properly indented
+                break
+            i -= 1
+        r = lines[i:]
+        del lines[i:]
+        return r
+
+    def visit(lines: list[Line | Block], indent: str) -> None:
+        for c in lines:
+            if isinstance(c, Block):
+                visit(c.tokens, c.indent)
+        i = 0
+        while i < len(lines):
+            c = lines[i]
+            if isinstance(c, Block):
+                lines[i + 1 : i + 1] = scrape_end(c.tokens, c.indent)
+            i += 1
+
+    visit(lines, "")
