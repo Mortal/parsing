@@ -38,6 +38,14 @@ class Block:
         assert self.tokens
         return self.tokens[-1].end
 
+    @property
+    def first_non_blank(self) -> Token | None:
+        for t in self.tokens:
+            b = t.first_non_blank
+            if b is not None:
+                return b
+        return None
+
 
 def flatten(tokens: Iterable[Token | Parenthesized | Line | Block]) -> Iterator[Token]:
     for tok in tokens:
