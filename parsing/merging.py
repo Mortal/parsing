@@ -37,7 +37,12 @@ def default_merge(
 
 
 def merge(
-    ancestor: str, current: str, other: str, name: str, conflict_marker_size: int, smart_merge: Callable[[str, str, str], tuple[str, str, str]]
+    ancestor: str,
+    current: str,
+    other: str,
+    name: str,
+    conflict_marker_size: int,
+    smart_merge: Callable[[str, str, str], tuple[str, str, str]],
 ) -> bool:
     """Merge other and current into current"""
 
@@ -112,6 +117,11 @@ def merging_main(smart_merge: Callable[[str, str, str], tuple[str, str, str]]) -
     args = parser.parse_args()
 
     if not merge(
-        args.ancestor, args.current, args.other, args.name, args.conflict_marker_size, smart_merge
+        args.ancestor,
+        args.current,
+        args.other,
+        args.name,
+        args.conflict_marker_size,
+        smart_merge,
     ):
         raise SystemExit(1)

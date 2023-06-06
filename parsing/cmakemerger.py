@@ -3,8 +3,13 @@ import difflib
 
 import parsing
 from parsing import Parenthesized
+from parsing.cmakeparser import (
+    Line,
+    get_grouped_args,
+    identify_cmake_lines,
+    iter_cmake_tokens,
+)
 from parsing.merging import merging_main
-from parsing.cmakeparser import Line, iter_cmake_tokens, identify_cmake_lines, get_grouped_args
 
 
 def parse_line_as_definition(line: Line) -> tuple[str, str, str] | None:
@@ -51,7 +56,9 @@ def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]
     other_insert: list[list[tuple[str, str]]] = [[] for _ in range(n + 1)]
     current_names, current_texts = zip(*identify_definitions(current))
     other_names, other_texts = zip(*identify_definitions(other))
-    current_matcher = difflib.SequenceMatcher(a=ancestor_names, b=current_names, autojunk=False)
+    current_matcher = difflib.SequenceMatcher(
+        a=ancestor_names, b=current_names, autojunk=False
+    )
     ancestor_out: list[str] = []
     current_out: list[str] = []
     other_out: list[str] = []

@@ -1,11 +1,17 @@
 import json
-from typing import Iterator, Sequence, Iterable, Callable
+from typing import Callable, Iterable, Iterator, Sequence
 
-from parsing import pythonparser
-from parsing import Token, Parenthesized, ParsingErr, ParsingError, Span, Position
-from parsing import LineParser
-from parsing.pythonparser import Line, Block, parse_python_expression, Binop, Operand
-
+from parsing import (
+    LineParser,
+    Parenthesized,
+    ParsingErr,
+    ParsingError,
+    Position,
+    Span,
+    Token,
+    pythonparser,
+)
+from parsing.pythonparser import Binop, Block, Line, Operand, parse_python_expression
 
 _init_commands: list[str] = []
 
@@ -31,7 +37,9 @@ def vnoremap(key: str):
 
 
 def identify_buffer_lines(buffer) -> Iterator[Line]:
-    lexer_output = pythonparser.iter_python_tokens(buffer.name, "\n".join(buffer) + "\n")
+    lexer_output = pythonparser.iter_python_tokens(
+        buffer.name, "\n".join(buffer) + "\n"
+    )
     matched_parens = pythonparser.iter_match_python_parens(lexer_output)
     return pythonparser.identify_python_lines(matched_parens)
 
@@ -46,7 +54,9 @@ def plug_select_expression_op(vim) -> None:
     select_expression(vim, row, col, row, col)
 
 
-def create_positions(span: Span) -> list[int | tuple[int] | tuple[int, int] | tuple[int, int, int]]:
+def create_positions(
+    span: Span,
+) -> list[int | tuple[int] | tuple[int, int] | tuple[int, int, int]]:
     "Convert a Span into something suitable for vim's matchaddpos."
     positions: list[int | tuple[int] | tuple[int, int] | tuple[int, int, int]] = []
     if span.start.lineno == span.end.lineno:
@@ -57,12 +67,18 @@ def create_positions(span: Span) -> list[int | tuple[int] | tuple[int, int] | tu
             return [(span.start.lineno, span.start.column + 1)]
         # "As above, but the third number gives the
         #  length of the highlight in bytes."
-        return [(span.start.lineno, span.start.column + 1, span.end.column - span.start.column + 1)]
+        return [
+            (
+                span.start.lineno,
+                span.start.column + 1,
+                span.end.column - span.start.column + 1,
+            )
+        ]
     return [
         (span.start.lineno, span.start.column, 2 ** 30),
         # "A number.  This whole line will be highlighted."
         *range(span.start.lineno + 1, span.end.lineno),
-        (span.end.lineno, 1, span.end.column)
+        (span.end.lineno, 1, span.end.column),
     ]
 
 
@@ -75,7 +91,7 @@ def plug_select_expression_visual(vim) -> None:
     except ParsingError as e:
         positions = create_positions(e.err.span)
         vim.command(f'call matchaddpos("PypError", {json.dumps(positions)})')
-        vim.command(f'normal! {e.err.span.start.lineno}G')
+        vim.command(f"normal! {e.err.span.start.lineno}G")
         raise
 
 
@@ -107,14 +123,18 @@ def select_expression(vim, row1: int, col1: int, row2: int, col2: int) -> None:
         # Otherwise, select from atom up until trailer.
         if isinstance(operand.atom, Parenthesized):
             if inside1(operand.atom.left.end) and inside2(operand.atom.right.start):
-                return visit_line(operand.atom.tokens) or Span(operand.atom.tokens[0].start, operand.atom.tokens[-1].end)
+                return visit_line(operand.atom.tokens) or Span(
+                    operand.atom.tokens[0].start, operand.atom.tokens[-1].end
+                )
         end = operand.atom.end
         if not inside2(end):
             for n in operand.trailers:
                 for m in n:
                     if isinstance(m, Parenthesized):
                         if inside1(m.left.end) and inside2(m.right.start):
-                            return visit_line(m.tokens) or Span(m.tokens[0].start, m.tokens[-1].end)
+                            return visit_line(m.tokens) or Span(
+                                m.tokens[0].start, m.tokens[-1].end
+                            )
                 if inside2(n[-1].end):
                     end = n[-1].end
                     break
@@ -304,11 +324,13 @@ def plug_select_class(vim) -> None:
 
 
 def load_vimplugin(vim) -> None:
-    vim.command("""\
+    vim.command(
+        """\
 if !hlexists('PypError')
     highlight link PypError SpellBad
 endif
-""")
+"""
+    )
 
     for c in _init_commands:
         vim.command(c)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import re
 from dataclasses import dataclass
-from typing import Iterator, NamedTuple, Iterable
+from typing import Iterable, Iterator, NamedTuple
 
 import parsing
-from parsing import Token, Parenthesized, Position, IterParenthesized
+from parsing import IterParenthesized, Parenthesized, Position, Token
 
 
 @dataclass
@@ -43,7 +43,9 @@ def iter_cmake_tokens(filename: str, contents: str) -> Iterator[Token]:
     return parsing.iter_tokens(cmake_lexer, filename, contents)
 
 
-def identify_cmake_lines(tokens: Iterable[Token | Parenthesized | IterParenthesized]) -> Iterator[Line]:
+def identify_cmake_lines(
+    tokens: Iterable[Token | Parenthesized | IterParenthesized],
+) -> Iterator[Line]:
     line: list[Token | Parenthesized] = []
     got_indent: Token | None = None
     first_non_blank: Token | None = None

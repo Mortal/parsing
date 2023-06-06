@@ -14,7 +14,6 @@ from parsing import (
     Token,
 )
 
-
 python_lexer = re.compile(
     r"""
 (?P<name>[\w][\w\d]*)
@@ -40,7 +39,9 @@ def iter_python_tokens(filename: str, contents: str) -> Iterator[Token]:
     return parsing.iter_tokens(python_lexer, filename, contents)
 
 
-def iter_match_python_parens(tokens: Iterable[Token]) -> Iterator[Token | IterParenthesized]:
+def iter_match_python_parens(
+    tokens: Iterable[Token],
+) -> Iterator[Token | IterParenthesized]:
     return parsing.iter_match_parens(tokens, {"{": "}", "[": "]", "(": ")"})
 
 
@@ -222,11 +223,10 @@ def identify_python_blocks(
 
 
 def fixup_end_of_block(lines: list[Line | Block]) -> None:
-
     def scrape_end(lines: list[Line | Block], indent: str) -> list[Line | Block]:
         i = len(lines)
         while i > 0:
-            c = lines[i-1]
+            c = lines[i - 1]
             if not isinstance(c, Line):
                 break
             if c.first_non_blank is not None:
@@ -324,16 +324,20 @@ class Binop:
 def parse_python_expression(p: LineParser) -> Binop:
     assert p.has_next
     n = p.next
-    if (n.kind == "op" and n.text not in ("+", "-", "~")) or n.text in ("if", "while", "for", "elif", "else"):
+    if (n.kind == "op" and n.text not in ("+", "-", "~")) or n.text in (
+        "if",
+        "while",
+        "for",
+        "elif",
+        "else",
+    ):
         return Binop(Operand([], p.skip(), []), [])
     return Binop(parse_python_operand(p), parse_python_operands(p))
 
 
 def parse_python_operand(p: LineParser) -> Operand:
     return Operand(
-        parse_python_prefixes(p),
-        parse_python_atom(p),
-        parse_python_trailers(p)
+        parse_python_prefixes(p), parse_python_atom(p), parse_python_trailers(p)
     )
 
 
@@ -355,20 +359,20 @@ def parse_python_prefixes(p: LineParser) -> list[MultiToken]:
 
 
 def parse_python_prefix(p: LineParser) -> MultiToken | None:
-    if (n := p.skip_token("lambda")):
+    if n := p.skip_token("lambda"):
         prefix = [p.skip()]
         while not prefix[-1].text == ":":
             prefix.append(p.skip())
         return prefix
 
-    if (n := p.skip_token("yield")):
-        if (m := p.skip_token("from")):
+    if n := p.skip_token("yield"):
+        if m := p.skip_token("from"):
             # Skip "yield from"
             return [n, m]
         # Skip "yield"
         return [n]
 
-    if (n := p.skip_token(*PREFIX_UNOPS)):
+    if n := p.skip_token(*PREFIX_UNOPS):
         # Skip single-token unary prefixed operators: "await", "not", +/-/~
         return [n]
     return None
@@ -391,7 +395,7 @@ def parse_python_trailer(p: LineParser) -> MultiToken | None:
     if isinstance(p.next, Parenthesized):
         # Function call or indexing
         return [p.skip()]
-    if (n := p.skip_token(".")):
+    if n := p.skip_token("."):
         # Attribute lookup
         return [n, p.skip()]
     return None

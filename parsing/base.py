@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Optional, Iterator, Iterable, Callable, Sequence
+from typing import Callable, Iterable, Iterator, Optional, Sequence
 
 
 @dataclass
@@ -262,7 +262,7 @@ def iter_opt_tokens(
     contents: str | None = None,
     *,
     buffer: Buffer | None = None,
-    pos: Position | None = None
+    pos: Position | None = None,
 ) -> Iterator[OptToken]:
     if buffer is None:
         assert filename is not None
@@ -279,7 +279,7 @@ def iter_tokens(
     contents: str | None = None,
     *,
     buffer: Buffer | None = None,
-    pos: Position | None = None
+    pos: Position | None = None,
 ) -> Iterator[Token]:
     if buffer is None:
         assert filename is not None
@@ -387,7 +387,9 @@ class IterParenthesized:
             t = next(self.tokens)
         except StopIteration:
             raise self.left.to_error("BUG: no tokens?")
-        right: Token | Parenthesized = t.collect() if isinstance(t, IterParenthesized) else t
+        right: Token | Parenthesized = (
+            t.collect() if isinstance(t, IterParenthesized) else t
+        )
         for t in self.tokens:
             toks.append(right)
             right = t.collect() if isinstance(t, IterParenthesized) else t

@@ -1,6 +1,14 @@
 from .base import (
-    iter_tokens, ParsingError, Token, Position,
-    Parenthesized, IterParenthesized, match_parens, iter_match_parens,
-    ParsingErr, ParsingError, Span,
-    LineParser, MultiToken,
+    IterParenthesized,
+    LineParser,
+    MultiToken,
+    Parenthesized,
+    ParsingErr,
+    ParsingError,
+    Position,
+    Span,
+    Token,
+    iter_match_parens,
+    iter_tokens,
+    match_parens,
 )

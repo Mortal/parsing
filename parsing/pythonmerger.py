@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 import difflib
 
-from parsing import pythonparser
+from parsing import Token, pythonparser
 from parsing.merging import merging_main
-from parsing import Token
 from parsing.pythonparser import Block, Line, fixup_end_of_block
 
 
@@ -82,7 +81,9 @@ def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]
     other_insert: list[list[tuple[str, str]]] = [[] for _ in ancestor_names]
     current_names, current_texts = zip(*identify_function_definitions(current))
     other_names, other_texts = zip(*identify_function_definitions(other))
-    current_matcher = difflib.SequenceMatcher(a=ancestor_names, b=current_names, autojunk=False)
+    current_matcher = difflib.SequenceMatcher(
+        a=ancestor_names, b=current_names, autojunk=False
+    )
     ancestor_out: list[str] = []
     current_out: list[str] = []
     other_out: list[str] = []

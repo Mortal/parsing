@@ -1,18 +1,17 @@
 import argparse
 import traceback
-from typing import Iterator, Iterable
+from typing import Iterable, Iterator
 
-from parsing import ParsingError, Token, Position
-from parsing.pythonparser import iter_python_tokens
-from parsing.pythonparser import match_python_parens
+from parsing import ParsingError, Position, Token
 from parsing.pythonparser import (
-    identify_python_lines,
-    identify_python_blocks,
-    flatten,
-    Line,
     Block,
+    Line,
+    flatten,
+    identify_python_blocks,
+    identify_python_lines,
+    iter_python_tokens,
+    match_python_parens,
 )
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--no-output", "-n", action="store_true")
