@@ -263,15 +263,6 @@ def iter_opt_tokens_change_encoding(
     return gen(), change_encoding
 
 
-def iter_tokens_change_encoding(
-    pattern: re.Pattern[str], filename: str, line_bytes: Iterable[bytes]
-) -> tuple[Iterator[Token], Callable[[str], None]]:
-    tokens, change_encoding = iter_opt_tokens_change_encoding(
-        pattern, filename, line_bytes
-    )
-    return unwrapped_non_blank(tokens), change_encoding
-
-
 @dataclass
 class Parenthesized:
     left: Token
