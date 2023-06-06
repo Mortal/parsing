@@ -2,7 +2,92 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Iterator, Iterable, Callable
 
-from .types import Position, Span, Buffer, ParsingErr, ParsingError
+
+@dataclass
+class Position:
+    index: int
+    lineno: int
+    column: int
+
+    def advanced(self, buf: str, i: int, j: int) -> "Position":
+        assert self.index >= 0
+        assert i < j, (i, j)
+        nls = buf.count("\n", i, j)
+        k = j - i
+        assert k > 0
+        if not nls:
+            return Position(self.index + k, self.lineno, self.column + k)
+        # print("Found %s newlines in %r" % (nls, buf[i:j]))
+        nl = buf.rindex("\n", i, j)
+        column = j - (nl + 1)
+        return Position(self.index + k, self.lineno + nls, column)
+
+    def advanced_span(self, buffer: str, i: int, j: int) -> "Span":
+        return Span(self, self.advanced(buffer, i, j))
+
+    def new_buffer(self) -> "Position":
+        return Position(0, self.lineno, self.column)
+
+
+@dataclass
+class Span:
+    start: Position
+    end: Position
+
+
+@dataclass
+class Buffer:
+    filename: str
+    contents: str
+
+    def __repr__(self) -> str:
+        return "<Buffer %r>" % (self.filename,)
+
+    def get_line_from_position(self, pos: Position) -> str:
+        line_start = pos.index - pos.column
+        try:
+            line_end: int | None = self.contents.index("\n", line_start)
+        except ValueError:
+            line_end = None
+        return self.contents[line_start:line_end]
+
+
+@dataclass
+class ParsingErr:
+    message: str
+    buffer: Buffer
+    span: Span
+    length: int
+
+    def message_and_input_line(self) -> str:
+        line = self.buffer.get_line_from_position(self.span.start)
+        pref = line[: self.span.start.column]
+        pref_strip = pref.lstrip()
+        pref_ws_count = len(pref) - len(pref_strip)
+        indent = 4 * " "
+        return "\n".join(
+            [
+                'File "%s", line %s' % (self.buffer.filename, self.span.start.lineno),
+                indent + line[pref_ws_count:],
+                indent + len(pref_strip) * " " + "^" + "~" * (self.length - 1),
+                "%s:%s:%s: %s"
+                % (
+                    self.buffer.filename,
+                    self.span.start.lineno,
+                    self.span.start.column + 1,
+                    self.message,
+                ),
+            ]
+        )
+
+
+class ParsingError(Exception):
+    def __init__(self, err: ParsingErr) -> None:
+        self.err = err
+        super().__init__(err)
+
+    def __str__(self) -> str:
+        return self.err.message
 
 
 def span_from_start_and_text(pos: Position, text: str) -> Span:
@@ -232,3 +317,121 @@ def iter_tokens_change_encoding(
         pattern, filename, line_bytes
     )
     return unwrapped_non_blank(tokens), change_encoding
+
+
+@dataclass
+class Parenthesized:
+    left: Token
+    tokens: list["Token | Parenthesized"]
+    right: Token
+
+    @property
+    def kind(self) -> str:
+        return "parenthesized"
+
+    @property
+    def start(self) -> Position:
+        return self.left.start
+
+    @property
+    def index(self) -> int:
+        return self.start.index
+
+    @property
+    def end(self) -> Position:
+        return self.right.end
+
+    @property
+    def span(self) -> Span:
+        return Span(self.start, self.end)
+
+    @property
+    def length(self) -> int:
+        return self.end.index - self.start.index
+
+    @property
+    def text(self) -> str | None:
+        return None
+
+    @property
+    def buffer(self) -> Buffer:
+        return self.left.buffer
+
+    def to_err(self, message: str) -> ParsingErr:
+        return ParsingErr(message, self.buffer, self.span, self.length)
+
+    def to_error(self, message: str) -> ParsingError:
+        return ParsingError(self.to_err(message))
+
+
+@dataclass
+class IterParenthesized:
+    left: Token
+    tokens: "Iterator[Token | IterParenthesized]"
+
+    @property
+    def kind(self) -> str:
+        return "parenthesized"
+
+    @property
+    def start(self) -> Position:
+        return self.left.start
+
+    @property
+    def index(self) -> int:
+        return self.start.index
+
+    def collect(self) -> Parenthesized:
+        toks: list[Token | Parenthesized] = []
+        try:
+            t = next(self.tokens)
+        except StopIteration:
+            raise self.left.to_error("BUG: no tokens?")
+        right: Token | Parenthesized = t.collect() if isinstance(t, IterParenthesized) else t
+        for t in self.tokens:
+            toks.append(right)
+            right = t.collect() if isinstance(t, IterParenthesized) else t
+        assert isinstance(right, Token)
+        return Parenthesized(self.left, toks, right)
+
+    @property
+    def text(self) -> str | None:
+        return None
+
+
+def iter_match_parens(
+    tokens: Iterable[Token], parens: dict[str, str], until: str | None = None
+) -> Iterator[Token | IterParenthesized]:
+    for tok in tokens:
+        text = tok.text
+
+        if text == until:
+            yield tok
+            break
+
+        if text in parens:
+            it = iter_match_parens(tokens, parens, parens[text])
+            yield IterParenthesized(tok, it)
+            # Exhaust 'it' before continuing in case the caller doesn't
+            exhausted = True
+            for t in it:
+                exhausted = False
+            continue
+
+        if text in parens.values():
+            if until:
+                raise tok.to_error(
+                    f"incorrectly matched parentheses: expected '{until}'"
+                )
+            raise tok.to_error("unexpected parenthesis")
+
+        yield tok
+
+
+def match_parens(
+    tokens: Iterable[Token], parens: dict[str, str]
+) -> Iterator[Token | Parenthesized]:
+    return (
+        t.collect() if isinstance(t, IterParenthesized) else t
+        for t in iter_match_parens(tokens, parens)
+    )
