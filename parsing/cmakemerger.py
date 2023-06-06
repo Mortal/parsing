@@ -19,7 +19,7 @@ def parse_line_as_definition(line: Line) -> tuple[str, str, str] | None:
         if i + 1 < len(line.tokens):
             arg = line.tokens[i + 1]
             if isinstance(arg, Parenthesized):
-                args = get_grouped_args(arg.tokens[1:-1])
+                args = get_grouped_args(arg.tokens)
                 try:
                     k, v = next((k, v) for k in args for g in args[k] for v in g.args)
                 except StopIteration:
