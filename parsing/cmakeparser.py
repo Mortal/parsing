@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable, Iterator, NamedTuple
 
 import parsing
-from parsing import IterParenthesized, Parenthesized, Position, Token
+from parsing import Parenthesized, Position, Token
 
 
 @dataclass
@@ -44,14 +44,12 @@ def iter_cmake_tokens(filename: str, contents: str) -> Iterator[Token]:
 
 
 def identify_cmake_lines(
-    tokens: Iterable[Token | Parenthesized | IterParenthesized],
+    tokens: Iterable[Token | Parenthesized],
 ) -> Iterator[Line]:
     line: list[Token | Parenthesized] = []
     got_indent: Token | None = None
     first_non_blank: Token | None = None
     for tok in tokens:
-        if isinstance(tok, IterParenthesized):
-            tok = tok.collect()
         if isinstance(tok, Token):
             if tok.kind == "indent":
                 assert not line

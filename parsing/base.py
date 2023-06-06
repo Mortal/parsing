@@ -315,8 +315,7 @@ class LineParser:
     @property
     def next(self) -> Token | Parenthesized:
         assert self.has_next
-        t = self.tokens[self.i]
-        return t.collect() if isinstance(t, IterParenthesized) else t
+        return self.tokens[self.i]
 
     @property
     def next_opt(self) -> Token | Parenthesized | None:

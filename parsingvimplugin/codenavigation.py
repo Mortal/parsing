@@ -40,7 +40,7 @@ def identify_buffer_lines(buffer) -> Iterator[Line]:
     lexer_output = pythonparser.iter_python_tokens(
         buffer.name, "\n".join(buffer) + "\n"
     )
-    matched_parens = pythonparser.iter_match_python_parens(lexer_output)
+    matched_parens = pythonparser.match_python_parens(lexer_output)
     return pythonparser.identify_python_lines(matched_parens)
 
 

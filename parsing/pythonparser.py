@@ -4,7 +4,6 @@ from typing import Iterable, Iterator
 
 import parsing
 from parsing import (
-    IterParenthesized,
     LineParser,
     MultiToken,
     Parenthesized,
@@ -37,12 +36,6 @@ python_lexer = re.compile(
 
 def iter_python_tokens(filename: str, contents: str) -> Iterator[Token]:
     return parsing.iter_tokens(python_lexer, filename, contents)
-
-
-def iter_match_python_parens(
-    tokens: Iterable[Token],
-) -> Iterator[Token | IterParenthesized]:
-    return parsing.iter_match_parens(tokens, {"{": "}", "[": "]", "(": ")"})
 
 
 def match_python_parens(tokens: Iterable[Token]) -> Iterator[Token | Parenthesized]:
@@ -107,7 +100,7 @@ def flatten(tokens: Iterable[Token | Parenthesized | Line | Block]) -> Iterator[
 
 
 def identify_python_lines(
-    tokens: Iterable[Token | Parenthesized | IterParenthesized],
+    tokens: Iterable[Token | Parenthesized],
 ) -> Iterator[Line]:
     line: list[Token | Parenthesized] = []
     got_indent: Token | None = None
@@ -115,8 +108,6 @@ def identify_python_lines(
     got_backslash: Token | None = None
     first_non_blank: Token | None = None
     for tok in tokens:
-        if isinstance(tok, IterParenthesized):
-            tok = tok.collect()
         if isinstance(tok, Token):
             if tok.kind == "indent":
                 if line:
