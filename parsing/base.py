@@ -196,36 +196,6 @@ class OptToken:
         return Token(self.kind, self.buffer, self.span)
 
 
-class LinewiseTokenizer:
-    def __init__(self, filename: str, pattern: re.Pattern[str]) -> None:
-        self.filename = filename
-        self.pattern = pattern
-        self.fp = open(filename, "rb")
-        self.encoding = "utf-8"
-        self.pos = Position(0, 1, 0)
-
-    def __enter__(self) -> "LinewiseTokenizer":
-        self.fp.__enter__()
-        return self
-
-    def __exit__(self, ext, exv, exb) -> None:
-        self.fp.__exit__(ext, exv, exb)
-
-    def close(self) -> None:
-        self.fp.close()
-
-    def __iter__(self) -> "LinewiseTokenizer":
-        return self
-
-    def __next__(self) -> Iterator[OptToken]:
-        line = self.fp.readline().decode(self.encoding)
-        if not line:
-            raise StopIteration
-        res = iter_opt_tokens_impl(self.pattern, Buffer(self.filename, line), self.pos)
-        self.pos = self.pos.advanced(line, 0, len(line))
-        return res
-
-
 def iter_opt_tokens_impl(
     pattern: re.Pattern[str], buffer: Buffer, pos: Position
 ) -> Iterator[OptToken]:
