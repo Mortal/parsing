@@ -1,5 +1,5 @@
 def _load_pythonparser() -> None:
-    global parsing
+    global parsingvimplugin
 
     import os
     import sys
@@ -12,13 +12,13 @@ def _load_pythonparser() -> None:
         this_path = sys._getframe().f_code.co_filename
 
     try:
-        import parsing.codenavigation
+        import parsingvimplugin.codenavigation
     except ImportError:
         sys.path.append(os.path.dirname(os.path.dirname(this_path)))
 
-        import parsing.codenavigation
+        import parsingvimplugin.codenavigation
 
-    parsing.codenavigation.load_vimplugin(vim)
+    parsingvimplugin.codenavigation.load_vimplugin(vim)
 
 
 _load_pythonparser()

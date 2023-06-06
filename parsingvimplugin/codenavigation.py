@@ -19,7 +19,7 @@ _init_commands: list[str] = []
 def onoremap(key: str):
     def wrapper(f):
         _init_commands.append(
-            f"onoremap <silent> {key} :<C-U>py3 parsing.codenavigation.{f.__name__}(vim)<CR>"
+            f"onoremap <silent> {key} :<C-U>py3 parsingvimplugin.codenavigation.{f.__name__}(vim)<CR>"
         )
         return f
 
@@ -29,7 +29,7 @@ def onoremap(key: str):
 def vnoremap(key: str):
     def wrapper(f):
         _init_commands.append(
-            f"vnoremap <silent> {key} :<C-U>py3 parsing.codenavigation.{f.__name__}(vim)<CR>"
+            f"vnoremap <silent> {key} :<C-U>py3 parsingvimplugin.codenavigation.{f.__name__}(vim)<CR>"
         )
         return f
 
