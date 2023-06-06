@@ -3,7 +3,8 @@ from typing import Iterator, Sequence, Iterable, Callable
 
 from parsing import pythonparser
 from parsing import Token, Parenthesized, ParsingErr, ParsingError, Span, Position
-from parsing.pythonparser import Line, Block, LineParser, parse_python_expression
+from parsing import LineParser
+from parsing.pythonparser import Line, Block, parse_python_expression
 from .statements import Binop, Operand
 
 
