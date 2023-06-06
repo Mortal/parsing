@@ -94,11 +94,6 @@ def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]
             continue
         for i in range(i1, i2):
             ancestor_delete[i] = True
-        # if j1 != j2:
-        #     debug_text = f"# current: {tag} {i1} {i2} {j1} {j2}\n"
-        #     ancestor_out.append(debug_text)
-        #     current_out.append(debug_text)
-        #     other_out.append(debug_text)
         for j in range(j1, j2):
             current_insert[i1].append((current_names[j], current_texts[j]))
     other_matcher = difflib.SequenceMatcher(a=ancestor_names, b=other_names)
@@ -109,11 +104,6 @@ def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]
             continue
         for i in range(i1, i2):
             ancestor_delete[i] = True
-        # if j1 != j2:
-        #     debug_text = f"# other: {tag} {i1} {i2} {j1} {j2}\n"
-        #     ancestor_out.append(debug_text)
-        #     current_out.append(debug_text)
-        #     other_out.append(debug_text)
         for j in range(j1, j2):
             other_insert[i1].append((other_names[j], other_texts[j]))
     for name, text, delete, current_ix, other_ix, current_ins, other_ins in zip(
@@ -127,46 +117,17 @@ def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]
     ):
         current_ins_names = {n for n, t in current_ins}
         other_ins_names = {n for n, t in other_ins}
-        # if current_ins_names & other_ins_names:
-        #     debug_text = f"# Both add - don't merge {current_ins_names=} {other_ins_names=}\n"
-        #     ancestor_out.append(debug_text)
-        #     current_out.append(debug_text)
-        #     other_out.append(debug_text)
         if current_ins_names & other_ins_names:
             # Both add - don't merge
             current_out.extend(t for n, t in current_ins)
             other_out.extend(t for n, t in other_ins)
         else:
             # Merge
-            # if current_ins or other_ins:
-            #     debug_text = f"# Both add disjoint names - merge {current_ins_names=} {other_ins_names=}\n"
-            #     ancestor_out.append(debug_text)
-            #     current_out.append(debug_text)
-            #     other_out.append(debug_text)
             for n, t in current_ins + other_ins:
-                # debug_text = f"# Add {n}\n"
-                # ancestor_out.append(debug_text)
-                # current_out.append(debug_text)
-                # other_out.append(debug_text)
                 ancestor_out.append(t)
                 current_out.append(t)
                 other_out.append(t)
-        # if current_ix != -1:
-        #     debug_text = f"# Exist in current: {current_names[current_ix]}\n"
-        #     ancestor_out.append(debug_text)
-        #     current_out.append(debug_text)
-        #     other_out.append(debug_text)
-        # if other_ix != -1:
-        #     debug_text = f"# Exist in other: {other_names[other_ix]}\n"
-        #     ancestor_out.append(debug_text)
-        #     current_out.append(debug_text)
-        #     other_out.append(debug_text)
         if not (name and delete):
-            # if name:
-            #     debug_text = f"# Not deleted in ancestor: {name}\n"
-            #     ancestor_out.append(debug_text)
-            #     current_out.append(debug_text)
-            #     other_out.append(debug_text)
             ancestor_out.append(text)
         if current_ix != -1:
             current_out.append(current_texts[current_ix])
