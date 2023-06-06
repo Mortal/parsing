@@ -4,8 +4,7 @@ import difflib
 from parsing import pythonparser
 from parsing.merging import merging_main
 from parsing import Token
-from parsing.pythonparser import Block, Line
-from parsing.pythonparser.lines import fixup_end_of_block
+from parsing.pythonparser import Block, Line, fixup_end_of_block
 
 
 def identify_function_definitions(text: str) -> list[tuple[str, str]]:

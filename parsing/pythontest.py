@@ -3,9 +3,9 @@ import traceback
 from typing import Iterator, Iterable
 
 from parsing import ParsingError, Token, Position
-from parsing.pythonparser.tokens import iter_python_tokens
-from parsing.pythonparser.parens import match_python_parens
-from parsing.pythonparser.lines import (
+from parsing.pythonparser import iter_python_tokens
+from parsing.pythonparser import match_python_parens
+from parsing.pythonparser import (
     identify_python_lines,
     identify_python_blocks,
     flatten,
