@@ -77,20 +77,6 @@ class Block:
         return None
 
 
-def flatten(tokens: Iterable[Token | Parenthesized | Line | Block]) -> Iterator[Token]:
-    for tok in tokens:
-        if isinstance(tok, Token):
-            yield tok
-        elif isinstance(tok, Parenthesized):
-            yield tok.left
-            yield from flatten(tok.tokens)
-            yield tok.right
-        elif isinstance(tok, Line):
-            yield from flatten(tok.tokens)
-        elif isinstance(tok, Block):
-            yield from flatten(tok.tokens)
-
-
 def identify_python_lines(
     tokens: Iterable[Token | Parenthesized],
 ) -> Iterator[Line]:

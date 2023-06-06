@@ -2,16 +2,16 @@ import argparse
 import traceback
 from typing import Iterable, Iterator
 
-from parsing import ParsingError, Position, Token
+from parsing import Parenthesized, ParsingError, Position, Token
 from parsing.pythonparser import (
     Block,
     Line,
-    flatten,
     identify_python_blocks,
     identify_python_lines,
     iter_python_tokens,
     match_python_parens,
 )
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--no-output", "-n", action="store_true")
@@ -39,6 +39,20 @@ def check_contiguous_tokens(tokens: Iterable[Token]) -> Iterator[Token]:
                 )
         p = o.start.advanced(o.text, 0, o.length)
         yield o
+
+
+def flatten(tokens: Iterable[Token | Parenthesized | Line | Block]) -> Iterator[Token]:
+    for tok in tokens:
+        if isinstance(tok, Token):
+            yield tok
+        elif isinstance(tok, Parenthesized):
+            yield tok.left
+            yield from flatten(tok.tokens)
+            yield tok.right
+        elif isinstance(tok, Line):
+            yield from flatten(tok.tokens)
+        elif isinstance(tok, Block):
+            yield from flatten(tok.tokens)
 
 
 def main() -> None:
