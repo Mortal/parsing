@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Iterator, NamedTuple, Iterable
 
 import parsing
-from merging.merging import merging_main
+from parsing.merging import merging_main
 from parsing import Token, Parenthesized, Position, IterParenthesized
 
 

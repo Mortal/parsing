@@ -2,7 +2,7 @@
 import difflib
 
 import pythonparser
-from merging.merging import merging_main
+from parsing.merging import merging_main
 from parsing import Token
 from pythonparser import Block, Line
 from pythonparser.lines import fixup_end_of_block
