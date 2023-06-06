@@ -243,26 +243,6 @@ def iter_tokens(
     return unwrapped_non_blank(iter_opt_tokens_impl(pattern, buffer, pos))
 
 
-def iter_opt_tokens_change_encoding(
-    pattern: re.Pattern[str], filename: str, line_bytes: Iterable[bytes]
-) -> tuple[Iterator[OptToken], Callable[[str], None]]:
-
-    encoding = "utf-8"
-
-    def gen() -> Iterator[OptToken]:
-        pos = Position(0, 1, 0)
-        for b in line_bytes:
-            line = b.decode(encoding)
-            yield from iter_opt_tokens_impl(pattern, Buffer(filename, line), pos)
-            pos = pos.advanced(line, 0, len(line)).new_buffer()
-
-    def change_encoding(__e: str) -> None:
-        nonlocal encoding
-        encoding = __e
-
-    return gen(), change_encoding
-
-
 @dataclass
 class Parenthesized:
     left: Token
