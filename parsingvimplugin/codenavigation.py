@@ -11,7 +11,8 @@ from parsing import (
     Token,
     pythonparser,
 )
-from parsing.pythonparser import Binop, Block, Line, Operand, parse_python_expression
+from parsing.pythonparser import Block, Line
+from .pythongrammar import Binop, Operand, parse_python_expression
 
 _init_commands: list[str] = []
 
