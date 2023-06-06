@@ -226,23 +226,6 @@ def unwrapped_non_blank(it: Iterable[OptToken]) -> Iterator[Token]:
         yield t.unwrap()
 
 
-def iter_opt_tokens(
-    pattern: re.Pattern[str],
-    filename: str | None = None,
-    contents: str | None = None,
-    *,
-    buffer: Buffer | None = None,
-    pos: Position | None = None,
-) -> Iterator[OptToken]:
-    if buffer is None:
-        assert filename is not None
-        assert contents is not None
-        buffer = Buffer(filename, contents)
-    if pos is None:
-        pos = Position(0, 1, 0)
-    return iter_opt_tokens_impl(pattern, buffer, pos)
-
-
 def iter_tokens(
     pattern: re.Pattern[str],
     filename: str | None = None,
