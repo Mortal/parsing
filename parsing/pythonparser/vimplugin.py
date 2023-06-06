@@ -12,11 +12,13 @@ def _load_pythonparser() -> None:
         this_path = sys._getframe().f_code.co_filename
 
     try:
-        import pythonparser.codenavigation
+        from parsing import pythonparser
+        import parsing.pythonparser.codenavigation
     except ImportError:
-        sys.path.append(os.path.dirname(os.path.dirname(this_path)))
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(this_path))))
 
-        import pythonparser.codenavigation
+        from parsing import pythonparser
+        import parsing.pythonparser.codenavigation
 
     pythonparser.codenavigation.load_vimplugin(vim)
 

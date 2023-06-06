@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import difflib
 
-import pythonparser
+from parsing import pythonparser
 from parsing.merging import merging_main
 from parsing import Token
-from pythonparser import Block, Line
-from pythonparser.lines import fixup_end_of_block
+from parsing.pythonparser import Block, Line
+from parsing.pythonparser.lines import fixup_end_of_block
 
 
 def identify_function_definitions(text: str) -> list[tuple[str, str]]:

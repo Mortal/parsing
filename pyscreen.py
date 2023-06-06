@@ -6,8 +6,8 @@ from miniscreen import MiniScreen, read_one_keystroke
 from miniscreen.minifutures import next_keystroke, check_output, create_task, run_coroutine
 
 from parsing import Token, ParsingError, Parenthesized, Position
-from pythonparser import Block, Line
-import pythonparser
+from parsing.pythonparser import Block, Line
+from parsing import pythonparser
 
 
 parser = argparse.ArgumentParser()

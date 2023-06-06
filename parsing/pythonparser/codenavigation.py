@@ -1,9 +1,9 @@
 import json
 from typing import Iterator, Sequence, Iterable, Callable
 
-import pythonparser
+from parsing import pythonparser
 from parsing import Token, Parenthesized, ParsingErr, ParsingError, Span, Position
-from pythonparser import Line, Block, LineParser, parse_python_expression
+from parsing.pythonparser import Line, Block, LineParser, parse_python_expression
 from .statements import Binop, Operand
 
 
