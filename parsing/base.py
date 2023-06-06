@@ -90,21 +90,6 @@ class ParsingError(Exception):
         return self.err.message
 
 
-def span_from_start_and_text(pos: Position, text: str) -> Span:
-    return Span(pos, pos.advanced(text, 0, len(text)))
-
-
-def strip_count_if_non_empty(text: str, span: Span) -> Span:
-    u = text.lstrip()
-    t = u.rstrip()
-    if not t or len(t) == len(text):
-        return span
-    if len(text) == len(u):
-        return span
-    new_start = span.start.advanced(text, 0, len(text) - len(u))
-    return span_from_start_and_text(new_start, t)
-
-
 @dataclass
 class Token:
     kind: str
@@ -137,93 +122,20 @@ class Token:
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(self.to_err(message))
 
-    def strip_if_non_empty(self) -> "Token":
-        span = strip_count_if_non_empty(self.text, self.span)
-        if span == self.span:
-            return self
-        return Token(self.kind, self.buffer, span)
 
-
-@dataclass
-class OptToken:
-    kind: Optional[str]
-    buffer: Buffer
-    span: Span
-
-    @property
-    def start(self) -> Position:
-        return self.span.start
-
-    @property
-    def end(self) -> Position:
-        return self.span.end
-
-    @property
-    def index(self) -> int:
-        return self.span.start.index
-
-    @property
-    def length(self) -> int:
-        return self.span.end.index - self.span.start.index
-
-    @property
-    def text(self) -> str:
-        return self.buffer.contents[self.index : self.index + self.length]
-
-    @property
-    def blank(self) -> bool:
-        return not self.text.strip()
-
-    @property
-    def unmatch(self) -> bool:
-        return self.kind is None
-
-    def to_err(self, message: str) -> ParsingErr:
-        return ParsingErr(message, self.buffer, self.span, self.length)
-
-    def to_error(self, message: str) -> ParsingError:
-        return ParsingError(self.to_err(message))
-
-    def strip_if_non_empty(self) -> "OptToken":
-        span = strip_count_if_non_empty(self.text, self.span)
-        if span == self.span:
-            return self
-        return OptToken(self.kind, self.buffer, span)
-
-    def unwrap(self) -> Token:
-        if self.kind is None:
-            raise self.strip_if_non_empty().to_error("unexpected data while lexing")
-        return Token(self.kind, self.buffer, self.span)
-
-
-def iter_opt_tokens_impl(
-    pattern: re.Pattern[str], buffer: Buffer, pos: Position
-) -> Iterator[OptToken]:
-    contents = buffer.contents
-    for mo in re.finditer(pattern, contents):
-        kind = mo.lastgroup
-        assert kind is not None
-        i = mo.start()
-        if pos.index != i:
-            span = pos.advanced_span(contents, pos.index, i)
-            yield OptToken(None, buffer, span)
-            pos = span.end
-        i = mo.end()
-        span = pos.advanced_span(contents, pos.index, i)
-        yield OptToken(kind, buffer, span)
-        pos = span.end
-    i = len(contents)
-    if pos.index != i:
-        span = pos.advanced_span(contents, pos.index, i)
-        yield OptToken(None, buffer, span)
-        pos = span.end
-
-
-def unwrapped_non_blank(it: Iterable[OptToken]) -> Iterator[Token]:
-    for t in it:
-        if t.unmatch and t.blank:
-            continue
-        yield t.unwrap()
+def skip_over_whitespace(buffer: Buffer, pos: Position, end: int) -> Position:
+    span = pos.advanced_span(buffer.contents, pos.index, end)
+    text = buffer.contents[pos.index : end]
+    if text.strip():
+        a = len(text) - len(text.lstrip())
+        b = len(text.rstrip())
+        error_span = pos.advanced_span(
+            buffer.contents, pos.index, pos.index + a
+        ).start.advanced_span(buffer.contents, pos.index + a, pos.index + b)
+        raise ParsingError(
+            ParsingErr("unexpected data while lexing", buffer, error_span, b - a)
+        )
+    return pos.advanced(buffer.contents, pos.index, end)
 
 
 def iter_tokens(
@@ -240,7 +152,20 @@ def iter_tokens(
         buffer = Buffer(filename, contents)
     if pos is None:
         pos = Position(0, 1, 0)
-    return unwrapped_non_blank(iter_opt_tokens_impl(pattern, buffer, pos))
+    contents = buffer.contents
+    for mo in re.finditer(pattern, contents):
+        kind = mo.lastgroup
+        assert kind is not None
+        i = mo.start()
+        if pos.index != i:
+            pos = skip_over_whitespace(buffer, pos, i)
+        i = mo.end()
+        span = pos.advanced_span(contents, pos.index, i)
+        yield Token(kind, buffer, span)
+        pos = span.end
+    i = len(contents)
+    if pos.index != i:
+        skip_over_whitespace(buffer, pos, i)
 
 
 @dataclass
