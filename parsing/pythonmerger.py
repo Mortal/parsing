@@ -46,10 +46,7 @@ def identify_function_definitions(text: str) -> list[tuple[str, str]]:
         if not parser.has_next:
             # Blank line with no comment
             return True
-        t = parser.skip()
-        if t.kind == "comment":
-            # Non-indented comment
-            return True
+        # Non-indented line with comment
         return False
 
     i = 0
@@ -79,11 +76,13 @@ def identify_function_definitions(text: str) -> list[tuple[str, str]]:
 
 def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]:
     ancestor_names, ancestor_texts = zip(*identify_function_definitions(ancestor))
-    ancestor_delete = [False] * len(ancestor_names)
-    current_match = [-1] * len(ancestor_names)
-    other_match = [-1] * len(ancestor_names)
-    current_insert: list[list[tuple[str, str]]] = [[] for _ in ancestor_names]
-    other_insert: list[list[tuple[str, str]]] = [[] for _ in ancestor_names]
+    n = len(ancestor_names)
+    assert n == len(ancestor_texts)
+    ancestor_delete = [False] * n
+    current_match = [-1] * n
+    other_match = [-1] * n
+    current_insert: list[list[tuple[str, str]]] = [[] for _ in range(n + 1)]
+    other_insert: list[list[tuple[str, str]]] = [[] for _ in range(n + 1)]
     current_names, current_texts = zip(*identify_function_definitions(current))
     other_names, other_texts = zip(*identify_function_definitions(other))
     current_matcher = difflib.SequenceMatcher(
@@ -112,11 +111,11 @@ def smart_merge(ancestor: str, current: str, other: str) -> tuple[str, str, str]
         for j in range(j1, j2):
             other_insert[i1].append((other_names[j], other_texts[j]))
     for name, text, delete, current_ix, other_ix, current_ins, other_ins in zip(
-        ancestor_names,
-        ancestor_texts,
-        ancestor_delete,
-        current_match,
-        other_match,
+        [*ancestor_names, ""],
+        [*ancestor_texts, ""],
+        [*ancestor_delete, False],
+        [*current_match, -1],
+        [*other_match, -1],
         current_insert,
         other_insert,
     ):
