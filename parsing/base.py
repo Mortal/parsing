@@ -4,38 +4,6 @@ from typing import Callable, Iterable, Iterator, Optional, Sequence
 
 
 @dataclass
-class Position:
-    index: int
-    lineno: int
-    column: int
-
-    def advanced(self, buf: str, i: int, j: int) -> "Position":
-        assert self.index >= 0
-        assert i < j, (i, j)
-        nls = buf.count("\n", i, j)
-        k = j - i
-        assert k > 0
-        if not nls:
-            return Position(self.index + k, self.lineno, self.column + k)
-        # print("Found %s newlines in %r" % (nls, buf[i:j]))
-        nl = buf.rindex("\n", i, j)
-        column = j - (nl + 1)
-        return Position(self.index + k, self.lineno + nls, column)
-
-    def advanced_span(self, buffer: str, i: int, j: int) -> "Span":
-        return Span(self, self.advanced(buffer, i, j))
-
-    def new_buffer(self) -> "Position":
-        return Position(0, self.lineno, self.column)
-
-
-@dataclass
-class Span:
-    start: Position
-    end: Position
-
-
-@dataclass
 class Buffer:
     filename: str
     contents: str
@@ -50,6 +18,36 @@ class Buffer:
         except ValueError:
             line_end = None
         return self.contents[line_start:line_end]
+
+
+@dataclass
+class Position:
+    index: int
+    lineno: int
+    column: int
+
+    def advanced(self, buf: str, i: int, j: int) -> "Position":
+        assert self.index >= 0
+        if i == j:
+            return self
+        assert i < j, (i, j)
+        nls = buf.count("\n", i, j)
+        k = j - i
+        assert k > 0
+        if not nls:
+            return Position(self.index + k, self.lineno, self.column + k)
+        nl = buf.rindex("\n", i, j)
+        column = j - (nl + 1)
+        return Position(self.index + k, self.lineno + nls, column)
+
+    def advanced_span(self, buffer: Buffer, end: int) -> "Span":
+        return Span(self, self.advanced(buffer.contents, self.index, end))
+
+
+@dataclass
+class Span:
+    start: Position
+    end: Position
 
 
 @dataclass
@@ -123,19 +121,19 @@ class Token:
         return ParsingError(self.to_err(message))
 
 
-def skip_over_whitespace(buffer: Buffer, pos: Position, end: int) -> Position:
-    span = pos.advanced_span(buffer.contents, pos.index, end)
-    text = buffer.contents[pos.index : end]
+def skip_over_whitespace(buffer: Buffer, span: Span) -> Position:
+    text = buffer.contents[span.start.index : span.end.index]
     if text.strip():
         a = len(text) - len(text.lstrip())
         b = len(text.rstrip())
-        error_span = pos.advanced_span(
-            buffer.contents, pos.index, pos.index + a
-        ).start.advanced_span(buffer.contents, pos.index + a, pos.index + b)
+        assert text[a:b] == text.strip()
+        error_span = Span(
+            span.start.advanced(text, 0, a), span.start.advanced(text, 0, b)
+        )
         raise ParsingError(
             ParsingErr("unexpected data while lexing", buffer, error_span, b - a)
         )
-    return pos.advanced(buffer.contents, pos.index, end)
+    return span.end
 
 
 def iter_tokens(
@@ -152,20 +150,18 @@ def iter_tokens(
         buffer = Buffer(filename, contents)
     if pos is None:
         pos = Position(0, 1, 0)
-    contents = buffer.contents
-    for mo in re.finditer(pattern, contents):
+    for mo in re.finditer(pattern, buffer.contents):
         kind = mo.lastgroup
         assert kind is not None
-        i = mo.start()
-        if pos.index != i:
-            pos = skip_over_whitespace(buffer, pos, i)
-        i = mo.end()
-        span = pos.advanced_span(contents, pos.index, i)
+        pos = skip_over_whitespace(
+            buffer, pos.advanced_span(buffer, mo.start())
+        )
+        span = pos.advanced_span(buffer, mo.end())
         yield Token(kind, buffer, span)
         pos = span.end
-    i = len(contents)
-    if pos.index != i:
-        skip_over_whitespace(buffer, pos, i)
+    skip_over_whitespace(
+        buffer, pos.advanced_span(buffer, len(buffer.contents))
+    )
 
 
 @dataclass
