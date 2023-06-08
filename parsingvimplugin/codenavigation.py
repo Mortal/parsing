@@ -1,5 +1,5 @@
 import json
-from typing import Callable, Iterable, Iterator, Sequence
+from typing import Callable, Iterable, Iterator, Sequence, TypedDict
 
 from parsing import (
     LineParser,
@@ -11,10 +11,20 @@ from parsing import (
     Token,
     pythonparser,
 )
-from parsing.pythonparser import Block, Line
+from parsing.pythonparser import Block, Line, fixup_start_of_block, fixup_end_of_block
 from .pythongrammar import Binop, Operand, parse_python_expression
 
 _init_commands: list[str] = []
+
+
+def nnoremap(key: str):
+    def wrapper(f):
+        _init_commands.append(
+            f"nnoremap <silent> {key} :<C-U>py3 parsingvimplugin.codenavigation.{f.__name__}(vim)<CR>"
+        )
+        return f
+
+    return wrapper
 
 
 def onoremap(key: str):
@@ -322,6 +332,185 @@ def plug_select_class(vim) -> None:
         return bool(p.skip_token("class"))
 
     select_matching_block(vim, matcher)
+
+
+class FunDef(TypedDict):
+    decorators: list[Line]
+    async_: Token | None
+    name: Token
+    params: Parenthesized
+    ret: Binop | None
+    body: Block
+
+
+class ImpDef(TypedDict):
+    name: Token
+
+
+class VarDef(TypedDict):
+    name: Token
+
+
+Definition = FunDef | ImpDef | VarDef
+
+
+@nnoremap(r"\d")
+def plug_go_to_definition(vim) -> None:
+    row, col = vim.current.window.cursor
+    identified_lines = list(identify_buffer_lines(vim.current.buffer))
+    refn = find_reference_under_cursor(identified_lines, row, col)
+    if refn is None:
+        return
+    refn_path, refn_fun = refn
+    identified_blocks = list(pythonparser.identify_python_blocks(identified_lines))
+    fixup_start_of_block(identified_blocks)
+    fixup_end_of_block(identified_blocks)
+
+    def visit_block(lines: Sequence[Line | Block]) -> dict[str, Definition]:
+        defns: dict[str, Definition] = {}
+        i = 0
+        while i < len(lines):
+            r1, c1 = lines[i].start.lineno, lines[i].start.column
+            if not (r1, c1) <= (row, col):
+                # Past cursor
+                break
+            j = i
+            line = lines[i]
+            if isinstance(line, Block):
+                defns.update(visit_block(line.tokens))
+                i += 1
+                continue
+            p = LineParser(line.tokens).skip_whitespace()
+            decorators: list[Line] = []
+            while i < len(lines) and p.skip_token("@"):
+                decorators.append(line)
+                i += 1
+                if i == len(lines):
+                    break
+                line = lines[i]
+                if isinstance(line, Block):
+                    break
+                p = LineParser(line.tokens).skip_whitespace()
+            if i == len(lines):
+                break
+            async_ = p.skip_token("async")
+            if p.skip_token("def"):
+                name = p.require_token()
+                assert i + 1 < len(lines)
+                params = p.skip()
+                assert isinstance(params, Parenthesized)
+                if p.skip_token("->"):
+                    ret = parse_python_expression(p)
+                else:
+                    ret = None
+                p.require_token(":")
+                p.skip_whitespace()
+                while p.has_next and p.next.kind == "comment":
+                    p.skip()
+                    p.skip_whitespace()
+                assert not p.has_next
+                body = lines[i + 1]
+                i += 2
+                assert isinstance(body, Block), name.buffer.get_line_from_position(body.start)
+                fundef: FunDef = {
+                    "decorators": decorators,
+                    "async_": async_,
+                    "name": name,
+                    "params": params,
+                    "ret": ret,
+                    "body": body,
+                }
+                defns[name.text] = fundef
+                r1, c1 = body.start.lineno, body.start.column
+                r2, c2 = body.end.lineno, body.end.column
+                if (r1, c1) <= (row, col) and (row, col) <= (r2, c2):
+                    visit_block(body.tokens)
+            i += 1
+        return defns
+
+    defns = visit_block(identified_blocks)
+    if refn_path[0].text in defns:
+        defn = defns[refn_path[0].text]
+        if "name" in defn:
+            pos = defn["name"].start
+            vim.current.window.cursor = pos.lineno, pos.column
+
+
+def find_reference_under_cursor(identified_lines: Iterable[Line], row: int, col: int) -> tuple[list[Token], bool] | None:
+    try:
+        myline = next(
+            line
+            for line in identified_lines
+            if line.tokens
+            and line.tokens[0].start.lineno <= row
+            and row < line.tokens[-1].end.lineno
+        )
+    except StopIteration:
+        # print("line not found")
+        return None
+
+    def visit_operand(operand: Operand) -> tuple[list[Token], bool] | None:
+        r1, c1 = operand.start.lineno, operand.start.column
+        assert (r1, c1) <= (row, col)
+        if isinstance(operand.atom, Parenthesized):
+            r1, c1 = operand.atom.left.start.lineno, operand.atom.left.start.column
+            r2, c2 = operand.atom.right.end.lineno, operand.atom.right.end.column
+            if (r1, c1) <= (row, col) and (row, col) < (r2, c2):
+                return visit_line(operand.atom.tokens)
+            return None
+        r2, c2 = operand.atom.end.lineno, operand.atom.end.column
+        dotted_path = [operand.atom]
+        if (row, col) < (r2, c2):
+            is_call = False
+            if operand.trailers:
+                t = operand.trailers[0][0]
+                is_call = isinstance(t, Parenthesized) and t.left.text == "("
+            return dotted_path, is_call
+        for i, tr in enumerate(operand.trailers):
+            if dotted_path and tr[0].text == ".":
+                assert isinstance(tr[1], Token)
+                dotted_path.append(tr[1])
+                r2, c2 = tr[-1].end.lineno, tr[-1].end.column
+                if (row, col) < (r2, c2):
+                    is_call = False
+                    if i + 1 < len(operand.trailers):
+                        t = operand.trailers[i + 1][0]
+                        is_call = isinstance(t, Parenthesized) and t.left.text == "("
+                    return dotted_path, is_call
+            else:
+                del dotted_path[:]
+            for t in tr:
+                if isinstance(t, Parenthesized):
+                    r1, c1 = t.left.start.lineno, t.left.start.column
+                    r2, c2 = t.right.end.lineno, t.right.end.column
+                    if (r1, c1) <= (row, col) and (row, col) < (r2, c2):
+                        return visit_line(t.tokens)
+                    return None
+        return None
+
+    def visit_binop(binop: Binop) -> tuple[list[Token], bool] | None:
+        r1, c1 = binop.left.start.lineno, binop.left.start.column
+        r2, c2 = binop.left.end.lineno, binop.left.end.column
+        if (r1, c1) <= (row, col) and (row, col) < (r2, c2):
+            return visit_operand(binop.left)
+        for _operator, operand in binop.operands:
+            r1, c1 = operand.start.lineno, operand.start.column
+            r2, c2 = operand.end.lineno, operand.end.column
+            if (r1, c1) <= (row, col) and (row, col) < (r2, c2):
+                return visit_operand(operand)
+        return None
+
+    def visit_line(tokens: Sequence[Token | Parenthesized]) -> tuple[list[Token], bool] | None:
+        p = LineParser(tokens).skip_whitespace()
+        while p.has_next:
+            n = parse_python_expression(p)
+            r1, c1 = n.start.lineno, n.start.column
+            r2, c2 = n.end.lineno, n.end.column
+            if (r1, c1) <= (row, col) and (row, col) < (r2, c2):
+                return visit_binop(n)
+        return None
+
+    return visit_line(myline.tokens)
 
 
 def load_vimplugin(vim) -> None:
