@@ -190,6 +190,26 @@ def identify_python_blocks(
             yield t
 
 
+def fixup_start_of_block(lines: list[Line | Block]) -> None:
+    def visit(lines: list[Line | Block], indent: str) -> None:
+        i = len(lines) - 1
+        nextind = ""
+        while i > 0:
+            c = lines[i]
+            if not isinstance(c, Block):
+                i -= 1
+                continue
+            j = i
+            while j > 0 and isinstance(lines[j - 1], Line) and lines[j - 1].first_non_blank is None:
+                j -= 1
+            c.tokens[0:0] = lines[j:i]
+            visit(c.tokens, c.indent)
+            del lines[j:i]
+            i = j - 1
+
+    visit(lines, "")
+
+
 def fixup_end_of_block(lines: list[Line | Block]) -> None:
     # When parsing Python code greedily, dedented comments become part of the
     # preceding block, as weirdly indented Python comments never cause
