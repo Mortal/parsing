@@ -343,12 +343,24 @@ class FunDef(TypedDict):
     body: Block
 
 
+class ClassDef(TypedDict):
+    decorators: list[Line]
+    supers: Parenthesized
+    name: Token
+    body: Block
+
+
 class ImpDef(TypedDict):
     name: Token
+    srcname: Token
+    module: Binop | None
 
 
 class VarDef(TypedDict):
     name: Token
+    line: Line
+    start: Position
+    end: Position
 
 
 Definition = FunDef | ImpDef | VarDef
@@ -365,6 +377,16 @@ def plug_go_to_definition(vim) -> None:
     identified_blocks = list(pythonparser.identify_python_blocks(identified_lines))
     fixup_start_of_block(identified_blocks)
     fixup_end_of_block(identified_blocks)
+    defns = find_definitions_before_cursor(identified_blocks, row, col)
+    print(defns.keys())
+    if refn_path[0].text in defns:
+        defn = defns[refn_path[0].text]
+        if "name" in defn:
+            pos = defn["name"].start
+            vim.current.window.cursor = pos.lineno, pos.column
+
+
+def find_definitions_before_cursor(identified_blocks: Sequence[Line | Block], row: int, col: int) -> dict[str, Definition]:
 
     def visit_block(lines: Sequence[Line | Block]) -> dict[str, Definition]:
         defns: dict[str, Definition] = {}
@@ -393,6 +415,80 @@ def plug_go_to_definition(vim) -> None:
                 p = LineParser(line.tokens).skip_whitespace()
             if i == len(lines):
                 break
+            if p.skip_token("class"):
+                name = p.require_token()
+                assert i + 1 < len(lines)
+                assert p.has_next
+                if isinstance(p.next, Parenthesized):
+                    supers = p.next
+                    p.skip()
+                else:
+                    supers = None
+                p.require_token(":")
+                p.skip_whitespace()
+                while p.has_next and p.next.kind == "comment":
+                    p.skip()
+                    p.skip_whitespace()
+                assert not p.has_next
+                body = lines[i + 1]
+                i += 2
+                assert isinstance(body, Block), name.buffer.get_line_from_position(body.start)
+                classdef: ClassDef = {
+                    "decorators": decorators,
+                    "supers": supers,
+                    "name": name,
+                    "body": body,
+                }
+                defns[name.text] = classdef
+                r1, c1 = body.start.lineno, body.start.column
+                r2, c2 = body.end.lineno, body.end.column
+                if (r1, c1) <= (row, col) and (row, col) <= (r2, c2):
+                    # TODO: Pass some context about being inside a class
+                    visit_block(body.tokens)
+                continue
+            if p.skip_token("from"):
+                dots = []
+                while p.has_next and p.next.text == ".":
+                    dots.append(p.skip_token())
+                assert p.has_next
+                base = parse_python_expression(p)
+                p.require_token("import")
+                assert p.has_next
+                if paren := p.skip_paren("(", ")"):
+                    pp = LineParser(paren.tokens)
+                else:
+                    pp = p
+                while True:
+                    name1 = pp.require_token()
+                    if pp.skip_token("as"):
+                        name2 = pp.require_token()
+                    else:
+                        name2 = name1
+                    impdef: ImpDef = {
+                        "name": name2,
+                        "srcname": name1,
+                        "module": base,
+                    }
+                    defns[name.text] = impdef
+                    if not pp.skip_token(","):
+                        break
+                i += 1
+                continue
+            if p.skip_token("import"):
+                while True:
+                    expr = parse_python_expression(p)
+                    assert isinstance(expr.left.atom, Token)
+                    name = expr.left.atom
+                    impdef = {
+                        "name": name,
+                        "srcname": name,
+                        "module": None,
+                    }
+                    defns[name.text] = impdef
+                    if not p.skip_token(","):
+                        break
+                i += 1
+                continue
             async_ = p.skip_token("async")
             if p.skip_token("def"):
                 name = p.require_token()
@@ -425,15 +521,24 @@ def plug_go_to_definition(vim) -> None:
                 r2, c2 = body.end.lineno, body.end.column
                 if (r1, c1) <= (row, col) and (row, col) <= (r2, c2):
                     visit_block(body.tokens)
+                continue
+            if async_ is None and p.has_next:
+                expr = parse_python_expression(p)
+                if expr.operands and isinstance(expr.operands[0][0], Token) and expr.operands[0][0].text == "=":
+                    if isinstance(expr.left.atom, Token):
+                        vardef: VarDef = {
+                            "name": expr.left.atom,
+                            "line": lines[i],
+                            "start": expr.operands[0][1].start,
+                            "end": expr.end,
+                        }
+                        defns[expr.left.atom.text] = vardef
+                i += 1
+                continue
             i += 1
         return defns
 
-    defns = visit_block(identified_blocks)
-    if refn_path[0].text in defns:
-        defn = defns[refn_path[0].text]
-        if "name" in defn:
-            pos = defn["name"].start
-            vim.current.window.cursor = pos.lineno, pos.column
+    return visit_block(identified_blocks)
 
 
 def find_reference_under_cursor(identified_lines: Iterable[Line], row: int, col: int) -> tuple[list[Token], bool] | None:
