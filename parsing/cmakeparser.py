@@ -56,6 +56,7 @@ def identify_cmake_lines(
                 assert not got_indent
                 assert not first_non_blank
                 got_indent = tok
+                line.append(tok)
             elif tok.kind == "newline":
                 line.append(tok)
                 line_object = Line(
@@ -69,16 +70,17 @@ def identify_cmake_lines(
                 # Reset state
                 got_indent = None
                 first_non_blank = None
-                continue
             elif tok.kind == "comment":
                 line.append(tok)
-                continue
             else:
                 if first_non_blank is None:
                     first_non_blank = tok
-        if isinstance(tok, Parenthesized) and first_non_blank is None:
-            first_non_blank = tok.left
-        line.append(tok)
+                line.append(tok)
+        else:
+            assert isinstance(tok, Parenthesized)
+            if first_non_blank is None:
+                first_non_blank = tok.left
+            line.append(tok)
     if line:
         line_object = Line(
             line[:],

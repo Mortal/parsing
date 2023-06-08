@@ -1,50 +1,55 @@
 #!/usr/bin/env python3
 import difflib
 
-from parsing import Token, pythonparser
+from parsing import LineParser, Token, pythonparser
 from parsing.merging import merging_main
 from parsing.pythonparser import Block, Line, fixup_end_of_block
 
 
 def identify_function_definitions(text: str) -> list[tuple[str, str]]:
     lexer_output = pythonparser.iter_python_tokens("identify_definitions", text)
-    matched_parens = pythonparser.iter_match_python_parens(lexer_output)
+    matched_parens = pythonparser.match_python_parens(lexer_output)
     lines = pythonparser.identify_python_lines(matched_parens)
     blocks = list(pythonparser.identify_python_blocks(lines))
     fixup_end_of_block(blocks)
     result: list[tuple[str, str]] = []
 
     def is_pre(b: Line | Block) -> bool:
-        if not isinstance(b, Line):
+        "Returns true if this is a line that goes with the following def."
+        if isinstance(b, Block):
             return False
-        t = b.first_non_blank
-        if t:
-            return t.text == "@"
-        if b.indent is not None:
-            # Shouldn't happen
-            return False
-        if not b.tokens:
+        parser = LineParser(b.tokens).skip_whitespace()
+        if not parser.has_next:
             # Blank line
             return False
-        if (b.tokens[0].text or "").startswith("#"):
+        t = parser.skip()
+        if t.text == "@":
+            # Decorator
+            return True
+        if t.kind == "comment" and b.indent is None:
             # Non-indented comment
-            # raise Exception(f"is_pre found non-indented comment {b.tokens[0].text}")
             return True
         return False
 
     def is_post(b: Line | Block) -> bool:
+        "Returns true if this is a line that goes with the preceding def."
         if isinstance(b, Block):
+            # Indented block
+            return True
+        if b.indent is not None:
+            # Indented line - should only happen with weirdly indented comments
             return True
         if b.first_non_blank is not None:
+            # Non-indented line with code
             return False
-        if b.indent is not None:
+        parser = LineParser(b.tokens).skip_whitespace()
+        if not parser.has_next:
+            # Blank line with no comment
             return True
-        if not b.tokens:
+        t = parser.skip()
+        if t.kind == "comment":
+            # Non-indented comment
             return True
-        if not (b.tokens[0].text or "").startswith("#"):
-            return True
-        # raise Exception(f"is_post found non-indented comment {b.tokens[0].text}")
-        # Non-indented comment
         return False
 
     i = 0
@@ -53,22 +58,22 @@ def identify_function_definitions(text: str) -> list[tuple[str, str]]:
         while i < len(blocks) and is_pre(blocks[i]):
             # Consume a decorator
             i += 1
-        # First non-decorator line
+        # Consume a regular Line or Block
         first_line = blocks[i]
         i += 1
-        while i < len(blocks) and is_post(blocks[i]):
-            # Consume a comment or indented block
-            i += 1
+        if isinstance(first_line, Line):
+            while i < len(blocks) and is_post(blocks[i]):
+                # Consume a comment or indented block
+                i += 1
         full_text = text[blocks[j].start.index : blocks[i - 1].end.index]
-        t = first_line.first_non_blank
-        if t and t.text == "def":
-            assert isinstance(first_line, Line)
-            name = first_line.tokens[1]
-            assert isinstance(name, Token)
-            assert name.text  # should be non-blank str
-            result.append((name.text, full_text))
-        else:
-            result.append(("", full_text))
+        if isinstance(first_line, Line):
+            parser = LineParser(first_line.tokens).skip_whitespace()
+            if parser.skip_token("def"):
+                name = parser.require_token()
+                result.append((name.text, full_text))
+                continue
+        # Other line
+        result.append(("", full_text))
     return result
 
 

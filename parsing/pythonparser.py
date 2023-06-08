@@ -159,7 +159,6 @@ def identify_python_blocks(
             indent_text = line.indent.text if line.indent is not None else ""
             if expect_indent is not None:
                 if len(indent_text) <= current_indent:
-                    # raise line.first_non_blank.to_error("expected indent")
                     raise expect_indent.to_error("expected indent")
                 assert line.indent is not None
                 indent_stack.append(Block(indent_text, []))
@@ -192,6 +191,10 @@ def identify_python_blocks(
 
 
 def fixup_end_of_block(lines: list[Line | Block]) -> None:
+    # When parsing Python code greedily, dedented comments become part of the
+    # preceding block, as weirdly indented Python comments never cause
+    # IndentationError. However, when analyzing Python code, it's nice to move
+    # dedented comments at ends of blocks out of the block they were parsed in.
     def scrape_end(lines: list[Line | Block], indent: str) -> list[Line | Block]:
         i = len(lines)
         while i > 0:

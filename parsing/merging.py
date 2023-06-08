@@ -23,7 +23,7 @@ def default_merge(
             "git",
             "merge-file",
             "-L",
-            current,
+            current_name,
             "-L",
             ancestor_name,
             "-L",

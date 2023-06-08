@@ -2,9 +2,10 @@
 import difflib
 
 import parsing
-from parsing import Parenthesized
+from parsing import LineParser, Parenthesized
 from parsing.cmakeparser import (
     Line,
+    Parenthesized,
     get_grouped_args,
     identify_cmake_lines,
     iter_cmake_tokens,
@@ -13,25 +14,42 @@ from parsing.merging import merging_main
 
 
 def parse_line_as_definition(line: Line) -> tuple[str, str, str] | None:
-    tok = line.first_non_blank
-    if tok and tok.kind == "unquoted":
-        i = next(i for i, t in enumerate(line.tokens) if t is tok)
-        if i + 1 < len(line.tokens):
-            arg = line.tokens[i + 1]
-            if isinstance(arg, Parenthesized):
-                args = get_grouped_args(arg.tokens)
-                try:
-                    k, v = next((k, v) for k in args for g in args[k] for v in g.args)
-                except StopIteration:
-                    pass
-                else:
-                    return (tok.text, k, v.text)
-    return None
+    # Pick up a CMakeLists.txt "definition line", i.e. something like
+    # add_foo(
+    #     NAME myfoo
+    #     TYPES int float
+    # )
+    # or something like
+    # add_bar(
+    #     mybar
+    #     TYPES int float
+    # )
+    # and return ("add_foo", "NAME", "myfoo") or ("add_bar", "", "mybar").
+    # In other words, this returns the name of the invoked macro
+    # and the first not-all-uppercase argument.
+    parser = LineParser(line.tokens).skip_whitespace()
+    if not parser.has_next:
+        return None
+    tok = parser.skip()
+    if isinstance(tok, Parenthesized) or tok.kind != "unquoted":
+        return None
+    if not parser.has_next:
+        return None
+    arg = parser.skip_paren("(", ")")
+    if arg is None:
+        return None
+    args = get_grouped_args(arg.tokens)
+    try:
+        k, v = next((k, v) for k in args for g in args[k] for v in g.args)
+    except StopIteration:
+        return None
+    else:
+        return (tok.text, k, v.text)
 
 
 def identify_definitions(text: str) -> list[tuple[str, str]]:
     lexer_output = iter_cmake_tokens("identify_definitions", text)
-    matched_parens = parsing.iter_match_parens(lexer_output, {"(": ")", "[": "]"})
+    matched_parens = parsing.match_parens(lexer_output, {"(": ")", "[": "]"})
     lines = identify_cmake_lines(matched_parens)
     result: list[tuple[str, str]] = []
     for line in lines:
