@@ -11,7 +11,7 @@ class Buffer:
     def __repr__(self) -> str:
         return "<Buffer %r>" % (self.filename,)
 
-    def get_line_from_position(self, pos: Position) -> str:
+    def get_line_from_position(self, pos: "Position") -> str:
         line_start = pos.index - pos.column
         try:
             line_end: int | None = self.contents.index("\n", line_start)
@@ -55,7 +55,10 @@ class ParsingErr:
     message: str
     buffer: Buffer
     span: Span
-    length: int
+
+    @property
+    def length(self) -> int:
+        return self.span.end.index - self.span.start.index
 
     def message_and_input_line(self) -> str:
         line = self.buffer.get_line_from_position(self.span.start)
@@ -115,7 +118,7 @@ class Token:
         return self.buffer.contents[self.index : self.index + self.length]
 
     def to_err(self, message: str) -> ParsingErr:
-        return ParsingErr(message, self.buffer, self.span, self.length)
+        return ParsingErr(message, self.buffer, self.span)
 
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(self.to_err(message))
@@ -131,7 +134,7 @@ def skip_over_whitespace(buffer: Buffer, span: Span) -> Position:
             span.start.advanced(text, 0, a), span.start.advanced(text, 0, b)
         )
         raise ParsingError(
-            ParsingErr("unexpected data while lexing", buffer, error_span, b - a)
+            ParsingErr("unexpected data while lexing", buffer, error_span)
         )
     return span.end
 
@@ -203,7 +206,7 @@ class Parenthesized:
         return self.left.buffer
 
     def to_err(self, message: str) -> ParsingErr:
-        return ParsingErr(message, self.buffer, self.span, self.length)
+        return ParsingErr(message, self.buffer, self.span)
 
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(self.to_err(message))
