@@ -125,9 +125,7 @@ def skip_over_whitespace(buffer: Buffer, span: Span) -> Position:
         error_span = Span(
             span.start.advanced(text, 0, a), span.start.advanced(text, 0, b)
         )
-        raise ParsingError(
-            "unexpected data while lexing", buffer, error_span
-        )
+        raise ParsingError("unexpected data while lexing", buffer, error_span)
     return span.end
 
 
@@ -148,15 +146,11 @@ def iter_tokens(
     for mo in re.finditer(pattern, buffer.contents):
         kind = mo.lastgroup
         assert kind is not None
-        pos = skip_over_whitespace(
-            buffer, pos.advanced_span(buffer, mo.start())
-        )
+        pos = skip_over_whitespace(buffer, pos.advanced_span(buffer, mo.start()))
         span = pos.advanced_span(buffer, mo.end())
         yield Token(kind, buffer, span)
         pos = span.end
-    skip_over_whitespace(
-        buffer, pos.advanced_span(buffer, len(buffer.contents))
-    )
+    skip_over_whitespace(buffer, pos.advanced_span(buffer, len(buffer.contents)))
 
 
 @dataclass

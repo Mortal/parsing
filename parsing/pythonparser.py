@@ -200,7 +200,11 @@ def fixup_start_of_block(lines: list[Line | Block]) -> None:
                 i -= 1
                 continue
             j = i
-            while j > 0 and isinstance(lines[j - 1], Line) and lines[j - 1].first_non_blank is None:
+            while (
+                j > 0
+                and isinstance(lines[j - 1], Line)
+                and lines[j - 1].first_non_blank is None
+            ):
                 j -= 1
             c.tokens[0:0] = lines[j:i]
             visit(c.tokens, c.indent)
