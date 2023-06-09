@@ -4,7 +4,6 @@ from typing import Callable, Iterable, Iterator, Sequence, TypedDict
 from parsing import (
     LineParser,
     Parenthesized,
-    ParsingErr,
     ParsingError,
     Position,
     Span,
