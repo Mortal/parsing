@@ -61,22 +61,22 @@ def main() -> None:
     for filename in args.filename:
         try:
             with open(filename, "rb") as fp:
-                lexer_output = iter_python_tokens(filename, fp.read().decode())
-                matched_parens = match_python_parens(lexer_output)
-                identified_lines = identify_python_lines(matched_parens)
-                identified_blocks = identify_python_blocks(identified_lines)
-                if not args.no_output:
-                    identified_blocks = dump_identified_blocks(identified_blocks)
-                tokens = flatten(identified_blocks)
-                tokens = check_contiguous_tokens(tokens)
-                list(tokens)
+                contents = fp.read()
+            try:
+                contents_str = contents.decode("utf-8")
+            except UnicodeDecodeError:
+                contents_str = contents.decode("latin1")
+            lexer_output = iter_python_tokens(filename, contents_str)
+            matched_parens = match_python_parens(lexer_output)
+            identified_lines = identify_python_lines(matched_parens)
+            identified_blocks = identify_python_blocks(identified_lines)
+            if not args.no_output:
+                identified_blocks = dump_identified_blocks(identified_blocks)
+            tokens = flatten(identified_blocks)
+            tokens = check_contiguous_tokens(tokens)
+            list(tokens)
         except ParsingError as e:
-            traceback.print_exc()
-            print(e.message_and_input_line())
-            exitcode = 1
-        except UnicodeDecodeError as e:
-            traceback.print_exc()
-            print("%s: UnicodeDecodeError: %s" % (filename, e))
+            print(traceback.format_exc() + "\n" + e.message_and_input_line(), flush=True)
             exitcode = 1
         except KeyboardInterrupt:
             exitcode = 1
