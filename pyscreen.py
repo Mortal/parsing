@@ -25,7 +25,7 @@ def main() -> None:
         blocks = list(pythonparser.identify_python_blocks(lines))
     except ParsingError as e:
         traceback.print_exc()
-        print(e.err.message_and_input_line())
+        print(e.message_and_input_line())
         raise SystemExit(1)
     run_coroutine(async_main(list(blocks)))
 

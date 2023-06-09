@@ -343,7 +343,7 @@ def main() -> None:
             script = parse_sieve_script(fp.read(), script_path)
         except ParsingError as e:
             traceback.print_exc()
-            print(e.err.message_and_input_line())
+            print(e.message_and_input_line())
             raise SystemExit(1)
     n = 0
     spamdir = mailbox.Maildir(maildir_path)

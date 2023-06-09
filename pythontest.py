@@ -72,7 +72,7 @@ def main() -> None:
                 list(tokens)
         except ParsingError as e:
             traceback.print_exc()
-            print(e.err.message_and_input_line())
+            print(e.message_and_input_line())
             exitcode = 1
         except UnicodeDecodeError as e:
             traceback.print_exc()

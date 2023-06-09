@@ -99,9 +99,9 @@ def plug_select_expression_visual(vim) -> None:
     try:
         select_expression(vim, r1, c1, r2, c2 + 1)
     except ParsingError as e:
-        positions = create_positions(e.err.span)
+        positions = create_positions(e.span)
         vim.command(f'call matchaddpos("PypError", {json.dumps(positions)})')
-        vim.command(f"normal! {e.err.span.start.lineno}G")
+        vim.command(f"normal! {e.span.start.lineno}G")
         raise
 
 
