@@ -60,7 +60,7 @@ def identify_definitions(text: str) -> list[tuple[str, str]]:
         if defn is None:
             result.append(("", line_text))
         else:
-            result.append((defn[2], line_text))
+            result.append((defn[0] + "(" + defn[2], line_text))
     return result
 
 
