@@ -407,9 +407,7 @@ class ImpDef(TypedDict):
 
 class VarDef(TypedDict):
     name: Token
-    line: Line
-    start: Position
-    end: Position
+    value: Binop
 
 
 Definition = FunDef | ImpDef | VarDef
@@ -427,11 +425,13 @@ def plug_go_to_definition(vim) -> None:
     fixup_start_of_block(identified_blocks)
     fixup_end_of_block(identified_blocks)
     defns = find_definitions_before_cursor(identified_blocks, row, col)
-    print(defns.keys())
     if refn_path[0].text in defns:
         defn = defns[refn_path[0].text]
         if "name" in defn:
             pos = defn["name"].start
+            # Use a command so that the jump list is updated.
+            vim.command(f"{pos.lineno}")
+            # Set cursor to move to the exact column.
             vim.current.window.cursor = pos.lineno, pos.column
 
 
@@ -460,8 +460,7 @@ def find_definitions_before_cursor(
                 if i == len(lines):
                     break
                 line = lines[i]
-                if isinstance(line, Block):
-                    break
+                assert not isinstance(line, Block)
                 p = LineParser(line.tokens).skip_whitespace()
             if i == len(lines):
                 break
@@ -496,7 +495,7 @@ def find_definitions_before_cursor(
                 r2, c2 = body.end.lineno, body.end.column
                 if (r1, c1) <= (row, col) and (row, col) <= (r2, c2):
                     # TODO: Pass some context about being inside a class
-                    visit_block(body.tokens)
+                    defns.update(visit_block(body.tokens))
                 continue
             if p.skip_token("from"):
                 dots = []
@@ -574,23 +573,23 @@ def find_definitions_before_cursor(
                 r1, c1 = body.start.lineno, body.start.column
                 r2, c2 = body.end.lineno, body.end.column
                 if (r1, c1) <= (row, col) and (row, col) <= (r2, c2):
-                    visit_block(body.tokens)
+                    defns.update(visit_block(body.tokens))
                 continue
             if async_ is None and p.has_next:
-                expr = parse_python_expression(p)
-                if (
-                    expr.operands
-                    and isinstance(expr.operands[0][0], Token)
-                    and expr.operands[0][0].text == "="
-                ):
-                    if isinstance(expr.left.atom, Token):
+                target = parse_python_expression(p)
+                if p.skip_token("="):
+                    expr = parse_python_expression(p)
+                    if (
+                        not target.operands
+                        and not target.left.trailers
+                        and not target.left.prefixes
+                        and isinstance(target.left.atom, Token)
+                    ):
                         vardef: VarDef = {
-                            "name": expr.left.atom,
-                            "line": lines[i],
-                            "start": expr.operands[0][1].start,
-                            "end": expr.end,
+                            "name": target.left.atom,
+                            "value": expr,
                         }
-                        defns[expr.left.atom.text] = vardef
+                        defns[target.left.atom.text] = vardef
                 i += 1
                 continue
             i += 1
