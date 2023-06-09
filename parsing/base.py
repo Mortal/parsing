@@ -50,11 +50,15 @@ class Span:
     end: Position
 
 
-@dataclass
-class ParsingErr:
-    message: str
-    buffer: Buffer
-    span: Span
+class ParsingError(Exception):
+    def __init__(self, message: str, buffer: Buffer, span: Span) -> None:
+        self.message = message
+        self.buffer = buffer
+        self.span = span
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        return self.message
 
     @property
     def length(self) -> int:
@@ -80,22 +84,6 @@ class ParsingErr:
                 ),
             ]
         )
-
-
-class ParsingError(Exception):
-    def __init__(self, err: ParsingErr) -> None:
-        self.err = err
-        super().__init__(err)
-
-    def __str__(self) -> str:
-        return self.err.message
-
-    @property
-    def span(self) -> Span:
-        return self.err.span
-
-    def message_and_input_line(self) -> str:
-        return self.err.message_and_input_line()
 
 
 @dataclass
@@ -124,11 +112,8 @@ class Token:
     def text(self) -> str:
         return self.buffer.contents[self.index : self.index + self.length]
 
-    def to_err(self, message: str) -> ParsingErr:
-        return ParsingErr(message, self.buffer, self.span)
-
     def to_error(self, message: str) -> ParsingError:
-        return ParsingError(self.to_err(message))
+        return ParsingError(message, self.buffer, self.span)
 
 
 def skip_over_whitespace(buffer: Buffer, span: Span) -> Position:
@@ -141,7 +126,7 @@ def skip_over_whitespace(buffer: Buffer, span: Span) -> Position:
             span.start.advanced(text, 0, a), span.start.advanced(text, 0, b)
         )
         raise ParsingError(
-            ParsingErr("unexpected data while lexing", buffer, error_span)
+            "unexpected data while lexing", buffer, error_span
         )
     return span.end
 
@@ -212,11 +197,8 @@ class Parenthesized:
     def buffer(self) -> Buffer:
         return self.left.buffer
 
-    def to_err(self, message: str) -> ParsingErr:
-        return ParsingErr(message, self.buffer, self.span)
-
     def to_error(self, message: str) -> ParsingError:
-        return ParsingError(self.to_err(message))
+        return ParsingError(message, self.buffer, self.span)
 
 
 @dataclass
@@ -379,9 +361,6 @@ class LineParser:
         if t != t.strip():
             return n.kind
         return repr(t)
-
-    def err(self, message: str) -> ParsingErr:
-        return self.next.to_err(message)
 
     def error(self, message: str) -> ParsingError:
         return self.next.to_error(message)

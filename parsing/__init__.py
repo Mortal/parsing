@@ -3,7 +3,6 @@ from .base import (
     LineParser,
     MultiToken,
     Parenthesized,
-    ParsingErr,
     ParsingError,
     Position,
     Span,
