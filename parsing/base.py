@@ -90,6 +90,13 @@ class ParsingError(Exception):
     def __str__(self) -> str:
         return self.err.message
 
+    @property
+    def span(self) -> Span:
+        return self.err.span
+
+    def message_and_input_line(self) -> str:
+        return self.err.message_and_input_line()
+
 
 @dataclass
 class Token:
