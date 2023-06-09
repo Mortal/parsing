@@ -11,8 +11,7 @@ import string
 import time
 import traceback
 
-from parsing import iter_tokens, ParsingError
-
+from parsing import ParsingError, iter_tokens
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--script")
@@ -28,7 +27,7 @@ sieve_lexer = re.compile(
 |(?P<atom>[][{}();,])
 |(?P<eof>\Z)
 """,
-    re.M | re.X
+    re.M | re.X,
 )
 
 
@@ -93,7 +92,13 @@ def parse_sieve_script(s: str, filename="-"):
         return res
 
     def junk_atom():
-        if skip("comment") or skip("identifier") or skip("operator") or skip("string") or skip(";"):
+        if (
+            skip("comment")
+            or skip("identifier")
+            or skip("operator")
+            or skip("string")
+            or skip(";")
+        ):
             return
         if peek("("):
             junk_paren()
@@ -138,7 +143,10 @@ def parse_sieve_script(s: str, filename="-"):
             return "address", (is_all, header_key, needle)
         if skip("not"):
             return "not", (parse_cond(),)
-        print("-:%s: Unknown condition %r" % (lineno(), head_token.text[:10] if head_token else ""))
+        print(
+            "-:%s: Unknown condition %r"
+            % (lineno(), head_token.text[:10] if head_token else "")
+        )
         junk_cond()
         return None
 
@@ -211,7 +219,11 @@ def evaluate_script(script, message):
         if not header_value:
             return False
         if op == ":matches":
-            pattern = re.sub(r"[^*]+|\*", lambda mo: "(.*)" if mo.group() == "*" else re.escape(mo.group()), needle)
+            pattern = re.sub(
+                r"[^*]+|\*",
+                lambda mo: "(.*)" if mo.group() == "*" else re.escape(mo.group()),
+                needle,
+            )
             return re.search(pattern, str(header_value))
         elif op == ":is":
             return str(header_value) == needle
@@ -224,11 +236,7 @@ def evaluate_script(script, message):
         header_values = message.get_all(header_key)
         if not header_values:
             return False
-        emails = [
-            e
-            for n, e in
-            email.utils.getaddresses(header_values)
-        ]
+        emails = [e for n, e in email.utils.getaddresses(header_values)]
         if is_all and len(emails) != 1:
             return False
         return needle in emails
@@ -283,7 +291,9 @@ def evaluate_script(script, message):
                     except IndexError:
                         return ""
 
-                actions.append((why[:], ("fileinto", re.sub(r"\$\{(\d+)\}", repl, folder))))
+                actions.append(
+                    (why[:], ("fileinto", re.sub(r"\$\{(\d+)\}", repl, folder)))
+                )
             elif st[0] == "redirect":
                 actions.append((why[:], st))
             else:
@@ -347,14 +357,19 @@ def main() -> None:
             raise SystemExit(1)
     n = 0
     spamdir = mailbox.Maildir(maildir_path)
-    days = 24*3600
-    max_age = 180*days
+    days = 24 * 3600
+    max_age = 180 * days
     for message in messages_by_newest(spamdir, max_age=max_age):
         res = evaluate_script(script, message)
         actions = [a for w, a in res]
         if ("fileinto", "INBOX.Spam") not in actions:
             n += 1
-            print(n, "In spam, but not matched:", str(decode_any_header(message["Subject"])), actions)
+            print(
+                n,
+                "In spam, but not matched:",
+                str(decode_any_header(message["Subject"])),
+                actions,
+            )
     n = 0
     inbox = mailbox.Maildir(os.path.expanduser("~/Maildir"))
     for message in messages_by_newest(inbox, max_age=max_age):
@@ -362,7 +377,12 @@ def main() -> None:
         actions = [a for w, a in res]
         if ("fileinto", "INBOX.Spam") in actions:
             n += 1
-            print(n, "In Inbox, but matched:", str(decode_any_header(message["Subject"])), res)
+            print(
+                n,
+                "In Inbox, but matched:",
+                str(decode_any_header(message["Subject"])),
+                res,
+            )
 
 
 if __name__ == "__main__":

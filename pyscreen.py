@@ -3,12 +3,15 @@ import traceback
 from typing import Iterator
 
 from miniscreen import MiniScreen, read_one_keystroke
-from miniscreen.minifutures import next_keystroke, check_output, create_task, run_coroutine
+from miniscreen.minifutures import (
+    check_output,
+    create_task,
+    next_keystroke,
+    run_coroutine,
+)
 
-from parsing import Token, ParsingError, Parenthesized, Position
+from parsing import Parenthesized, ParsingError, Position, Token, pythonparser
 from parsing.pythonparser import Block, Line
-from parsing import pythonparser
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("filename")
@@ -32,11 +35,15 @@ def main() -> None:
 
 async def async_main(tokens: list[Line | Block | Parenthesized | Token]) -> None:
     with MiniScreen() as ms:
-        tokens = [t for t in tokens if not (isinstance(t, Line) and t.first_non_blank is None)]
+        tokens = [
+            t for t in tokens if not (isinstance(t, Line) and t.first_non_blank is None)
+        ]
         navstack = [(tokens, 0)][:0]
         current = 0
 
-        def stringify(token: Line | Block | Parenthesized | Token | str) -> Iterator[str]:
+        def stringify(
+            token: Line | Block | Parenthesized | Token | str,
+        ) -> Iterator[str]:
             p: Position | None = None
             stack = [token]
             while stack:
@@ -67,7 +74,14 @@ async def async_main(tokens: list[Line | Block | Parenthesized | Token]) -> None
             ms.set_window(
                 [
                     ("\x1b[1m" if current == i else "")
-                    + ("    ..." if isinstance(token, Block) else "".join(stringify(token)).lstrip().rstrip("\n").replace("\n", r"\n")[:90])
+                    + (
+                        "    ..."
+                        if isinstance(token, Block)
+                        else "".join(stringify(token))
+                        .lstrip()
+                        .rstrip("\n")
+                        .replace("\n", r"\n")[:90]
+                    )
                     + "\x1b[0m"
                     for i, token in enumerate(tokens[:90])
                 ]
@@ -93,7 +107,11 @@ async def async_main(tokens: list[Line | Block | Parenthesized | Token]) -> None
                 current_line = tokens[current]
                 if isinstance(current_line, Block):
                     navstack.append((tokens, current))
-                    tokens = [t for t in current_line.tokens if not (isinstance(t, Line) and t.first_non_blank is None)]
+                    tokens = [
+                        t
+                        for t in current_line.tokens
+                        if not (isinstance(t, Line) and t.first_non_blank is None)
+                    ]
                     current = 0
                 elif isinstance(current_line, Line):
                     navstack.append((tokens, current))
@@ -101,7 +119,11 @@ async def async_main(tokens: list[Line | Block | Parenthesized | Token]) -> None
                     current = 0
                 elif isinstance(current_line, Parenthesized):
                     navstack.append((tokens, current))
-                    tokens = [current_line.left, *current_line.tokens, current_line.right]
+                    tokens = [
+                        current_line.left,
+                        *current_line.tokens,
+                        current_line.right,
+                    ]
                     current = 0
             elif s in ("-", "backspace", "escape"):
                 if navstack:

@@ -12,7 +12,6 @@ from parsing.pythonparser import (
     match_python_parens,
 )
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--no-output", "-n", action="store_true")
 parser.add_argument("filename", nargs="+")
@@ -76,7 +75,9 @@ def main() -> None:
             tokens = check_contiguous_tokens(tokens)
             list(tokens)
         except ParsingError as e:
-            print(traceback.format_exc() + "\n" + e.message_and_input_line(), flush=True)
+            print(
+                traceback.format_exc() + "\n" + e.message_and_input_line(), flush=True
+            )
             exitcode = 1
         except KeyboardInterrupt:
             exitcode = 1

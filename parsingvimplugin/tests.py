@@ -2,7 +2,7 @@ import argparse
 import traceback
 from typing import Callable
 
-from parsing import pythonparser, LineParser
+from parsing import LineParser, pythonparser
 from parsingvimplugin import pythongrammar
 
 

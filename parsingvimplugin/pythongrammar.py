@@ -1,14 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from parsing import (
-    LineParser,
-    MultiToken,
-    Parenthesized,
-    Position,
-    Token,
-)
-
+from parsing import LineParser, MultiToken, Parenthesized, Position, Token
 
 BINOPS = (
     ",",

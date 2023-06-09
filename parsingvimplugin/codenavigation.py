@@ -10,7 +10,8 @@ from parsing import (
     Token,
     pythonparser,
 )
-from parsing.pythonparser import Block, Line, fixup_start_of_block, fixup_end_of_block
+from parsing.pythonparser import Block, Line, fixup_end_of_block, fixup_start_of_block
+
 from .pythongrammar import Binop, Operand, parse_python_expression
 
 _init_commands: list[str] = []
@@ -385,8 +386,9 @@ def plug_go_to_definition(vim) -> None:
             vim.current.window.cursor = pos.lineno, pos.column
 
 
-def find_definitions_before_cursor(identified_blocks: Sequence[Line | Block], row: int, col: int) -> dict[str, Definition]:
-
+def find_definitions_before_cursor(
+    identified_blocks: Sequence[Line | Block], row: int, col: int
+) -> dict[str, Definition]:
     def visit_block(lines: Sequence[Line | Block]) -> dict[str, Definition]:
         defns: dict[str, Definition] = {}
         i = 0
@@ -431,7 +433,9 @@ def find_definitions_before_cursor(identified_blocks: Sequence[Line | Block], ro
                 assert not p.has_next
                 body = lines[i + 1]
                 i += 2
-                assert isinstance(body, Block), name.buffer.get_line_from_position(body.start)
+                assert isinstance(body, Block), name.buffer.get_line_from_position(
+                    body.start
+                )
                 classdef: ClassDef = {
                     "decorators": decorators,
                     "supers": supers,
@@ -506,7 +510,9 @@ def find_definitions_before_cursor(identified_blocks: Sequence[Line | Block], ro
                 assert not p.has_next
                 body = lines[i + 1]
                 i += 2
-                assert isinstance(body, Block), name.buffer.get_line_from_position(body.start)
+                assert isinstance(body, Block), name.buffer.get_line_from_position(
+                    body.start
+                )
                 fundef: FunDef = {
                     "decorators": decorators,
                     "async_": async_,
@@ -523,7 +529,11 @@ def find_definitions_before_cursor(identified_blocks: Sequence[Line | Block], ro
                 continue
             if async_ is None and p.has_next:
                 expr = parse_python_expression(p)
-                if expr.operands and isinstance(expr.operands[0][0], Token) and expr.operands[0][0].text == "=":
+                if (
+                    expr.operands
+                    and isinstance(expr.operands[0][0], Token)
+                    and expr.operands[0][0].text == "="
+                ):
                     if isinstance(expr.left.atom, Token):
                         vardef: VarDef = {
                             "name": expr.left.atom,
@@ -540,7 +550,9 @@ def find_definitions_before_cursor(identified_blocks: Sequence[Line | Block], ro
     return visit_block(identified_blocks)
 
 
-def find_reference_under_cursor(identified_lines: Iterable[Line], row: int, col: int) -> tuple[list[Token], bool] | None:
+def find_reference_under_cursor(
+    identified_lines: Iterable[Line], row: int, col: int
+) -> tuple[list[Token], bool] | None:
     try:
         myline = next(
             line
@@ -604,7 +616,9 @@ def find_reference_under_cursor(identified_lines: Iterable[Line], row: int, col:
                 return visit_operand(operand)
         return None
 
-    def visit_line(tokens: Sequence[Token | Parenthesized]) -> tuple[list[Token], bool] | None:
+    def visit_line(
+        tokens: Sequence[Token | Parenthesized],
+    ) -> tuple[list[Token], bool] | None:
         p = LineParser(tokens).skip_whitespace()
         while p.has_next:
             n = parse_python_expression(p)
