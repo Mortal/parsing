@@ -43,6 +43,10 @@ def iter_cmake_tokens(filename: str, contents: str) -> Iterator[Token]:
     return parsing.iter_tokens(cmake_lexer, filename, contents)
 
 
+def match_cmake_parens(tokens: Iterable[Token]) -> Iterator[Token | Parenthesized]:
+    return parsing.match_parens(tokens, {"(": ")", "[": "]"})
+
+
 def identify_cmake_lines(
     tokens: Iterable[Token | Parenthesized],
 ) -> Iterator[Line]:

@@ -9,6 +9,7 @@ from parsing.cmakeparser import (
     get_grouped_args,
     identify_cmake_lines,
     iter_cmake_tokens,
+    match_cmake_parens,
 )
 from parsing.merging import merging_main
 
@@ -49,7 +50,7 @@ def parse_line_as_definition(line: Line) -> tuple[str, str, str] | None:
 
 def identify_definitions(text: str) -> list[tuple[str, str]]:
     lexer_output = iter_cmake_tokens("identify_definitions", text)
-    matched_parens = parsing.match_parens(lexer_output, {"(": ")", "[": "]"})
+    matched_parens = match_cmake_parens(lexer_output)
     lines = identify_cmake_lines(matched_parens)
     result: list[tuple[str, str]] = []
     for line in lines:
