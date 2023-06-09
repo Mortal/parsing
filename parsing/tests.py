@@ -14,6 +14,18 @@ TESTS: list[Callable[[], None]] = []
 
 
 @TESTS.append
+def cmakeparser_eof() -> None:
+    lines = list(
+        parsing.cmakeparser.identify_cmake_lines(
+            parsing.cmakeparser.match_cmake_parens(
+                parsing.cmakeparser.iter_cmake_tokens("-", "add(f1)")
+            )
+        )
+    )
+    assert lines
+
+
+@TESTS.append
 def cmakemerge_middle() -> None:
     def_f1 = "add(f1)\n"
     def_f2 = "add(f2)\n"
