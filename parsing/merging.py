@@ -2,6 +2,7 @@
 import argparse
 import os
 import subprocess
+import sys
 import tempfile
 from typing import Callable
 
@@ -52,7 +53,11 @@ def merge(
         or os.path.getsize(current) > SIZE_THRESHOLD
         or os.path.getsize(other) > SIZE_THRESHOLD
     ):
-        # print("Cannot merge large files")
+        print(
+            f"Not auto-merging '{current}' as it is larger than {SIZE_THRESHOLD} bytes",
+            file=sys.stderr,
+            flush=True,
+        )
         return default_merge(
             ancestor, ancestor, current, current, other, other, conflict_marker_size
         )
@@ -73,7 +78,11 @@ def merge(
         current_text = current_bytes.decode(encoding="UTF-8", errors="strict")
         other_text = other_bytes.decode(encoding="UTF-8", errors="strict")
     except UnicodeError:
-        # print("Cannot merge binary files")
+        print(
+            f"Not auto-merging '{current}' as could not be decoded as UTF-8",
+            file=sys.stderr,
+            flush=True,
+        )
         return default_merge(
             ancestor, ancestor, current, current, other, other, conflict_marker_size
         )
