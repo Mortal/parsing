@@ -115,6 +115,15 @@ class Token:
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(message, self.buffer, self.span)
 
+    def to_errortoken_at_end(self, message: str) -> "Token":
+        return Token(kind="error: " + message, buffer=self.buffer, span=Span(start=self.end, end=self.end))
+
+    def to_errortoken_at_start(self, message: str) -> "Token":
+        return Token(kind="error: " + message, buffer=self.buffer, span=Span(start=self.start, end=self.start))
+
+    def to_errortoken(self, message: str) -> "Token":
+        return Token(kind="error: " + message, buffer=self.buffer, span=self.span)
+
 
 def skip_over_whitespace(buffer: Buffer, span: Span) -> Position:
     text = buffer.contents[span.start.index : span.end.index]
@@ -193,6 +202,15 @@ class Parenthesized:
 
     def to_error(self, message: str) -> ParsingError:
         return ParsingError(message, self.buffer, self.span)
+
+    def to_errortoken_at_end(self, message: str) -> "Token":
+        return Token(kind="error: " + message, buffer=self.buffer, span=Span(start=self.end, end=self.end))
+
+    def to_errortoken_at_start(self, message: str) -> "Token":
+        return Token(kind="error: " + message, buffer=self.buffer, span=Span(start=self.start, end=self.start))
+
+    def to_errortoken(self, message: str) -> "Token":
+        return Token(kind="error: " + message, buffer=self.buffer, span=self.span)
 
 
 @dataclass
