@@ -126,7 +126,11 @@ def identify_python_lines(
         # Got a real token, so discard any previous colon
         got_colon = None
         if got_backslash:
-            raise got_backslash.to_error("expected newline after backslash")
+            assert line[-1] is got_backslash
+            line.append(
+                tok.to_errortoken_at_start("expected newline after backslash")
+            )
+            got_backslash = None
         line.append(tok)
         if isinstance(tok, Token):
             if tok.kind == "backslash":
@@ -136,7 +140,11 @@ def identify_python_lines(
                 got_colon = tok
                 continue
     if got_backslash:
-        raise got_backslash.to_error("unexpected EOF after backslash")
+        assert line[-1] is got_backslash
+        line.append(
+            got_backslash.to_errortoken_at_end("unexpected EOF after backslash")
+        )
+        got_backslash = None
     if line:
         line_object = Line(
             line[:],
@@ -153,18 +161,42 @@ def identify_python_blocks(
 ) -> Iterator[Line | Block]:
     indent_stack: list[Block] = []
     expect_indent: Token | None = None
+    line: Line | None = None
     for line in lines:
         if line.first_non_blank is not None:
             current_indent = len(indent_stack[-1].indent) if indent_stack else 0
             indent_text = line.indent.text if line.indent is not None else ""
             if expect_indent is not None:
                 if len(indent_text) <= current_indent:
-                    raise expect_indent.to_error("expected indent")
-                assert line.indent is not None
-                indent_stack.append(Block(indent_text, []))
-            else:
+                    # Parse error: expected indent.
+                    # Add error token and fall through to expect_indent=None case below.
+                    errorline = Line(
+                        tokens=[line.first_non_blank.to_errortoken_at_start("expected indent")],
+                        indent=None,
+                        colon=None,
+                        newline=None,
+                        first_non_blank=None,
+                    )
+                    if indent_stack:
+                        indent_stack[-1].tokens.append(errorline)
+                    else:
+                        yield errorline
+                    expect_indent = None
+                else:
+                    assert line.indent is not None
+                    indent_stack.append(Block(indent_text, []))
+            if expect_indent is None:
                 if len(indent_text) > current_indent:
-                    raise line.first_non_blank.to_error("unexpected indent")
+                    # Parse error: unexpected indent.
+                    # Add new block with an error token.
+                    errorline = Line(
+                        tokens=[line.first_non_blank.to_errortoken_at_start("unexpected indent")],
+                        indent=None,
+                        colon=None,
+                        newline=None,
+                        first_non_blank=None,
+                    )
+                    indent_stack.append(Block(indent_text, [errorline]))
                 while indent_stack and len(indent_text) < len(indent_stack[-1].indent):
                     t = indent_stack.pop()
                     if indent_stack:
@@ -174,14 +206,37 @@ def identify_python_blocks(
                 if len(indent_text) > (
                     len(indent_stack[-1].indent) if indent_stack else 0
                 ):
-                    raise line.first_non_blank.to_error("unexpected indent")
+                    # Parse error: unexpected indent.
+                    # Add new block with an error token.
+                    errorline = Line(
+                        tokens=[line.first_non_blank.to_errortoken_at_start("unexpected indent")],
+                        indent=None,
+                        colon=None,
+                        newline=None,
+                        first_non_blank=None,
+                    )
+                    indent_stack.append(Block(indent_text, [errorline]))
             expect_indent = line.colon
         if indent_stack:
             indent_stack[-1].tokens.append(line)
         else:
             yield line
     if expect_indent is not None:
-        raise expect_indent.to_error("expected indent after colon at eof")
+        # Parse error: expected indent after colon at eof.
+        assert line is not None
+        assert line.tokens
+        assert isinstance(line.tokens[-1], Token)
+        errorline = Line(
+            tokens=[line.tokens[-1].to_errortoken_at_end("expected indent after colon at eof")],
+            indent=None,
+            colon=None,
+            newline=None,
+            first_non_blank=None,
+        )
+        if indent_stack:
+            indent_stack[-1].tokens.append(errorline)
+        else:
+            yield errorline
     while indent_stack:
         t = indent_stack.pop()
         if indent_stack:
@@ -193,7 +248,6 @@ def identify_python_blocks(
 def fixup_start_of_block(lines: list[Line | Block]) -> None:
     def visit(lines: list[Line | Block], indent: str) -> None:
         i = len(lines) - 1
-        nextind = ""
         while i > 0:
             c = lines[i]
             if not isinstance(c, Block):
