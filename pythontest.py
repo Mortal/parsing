@@ -73,7 +73,9 @@ def main() -> None:
                 identified_blocks = dump_identified_blocks(identified_blocks)
             tokens = flatten(identified_blocks)
             tokens = check_contiguous_tokens(tokens)
-            list(tokens)
+            for t in tokens:
+                if t.kind.startswith("error: "):
+                    print(t.to_error(t.kind).message_and_input_line())
         except ParsingError as e:
             print(
                 traceback.format_exc() + "\n" + e.message_and_input_line(), flush=True
