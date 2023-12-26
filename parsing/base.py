@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator, Optional, Sequence
+from typing import Iterable, Iterator, Sequence
 
 
 @dataclass
