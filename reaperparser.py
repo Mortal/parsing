@@ -1,9 +1,10 @@
 import argparse
 import ast
+import os
 import re
 import traceback
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, NoReturn
 
 import parsing
 from parsing import Parenthesized, Position, Token, ParsingError
@@ -28,13 +29,28 @@ def match_reaper_parens(tokens: Iterable[Token]) -> Iterator[Token | Parenthesiz
     return parsing.match_parens(tokens, {"<": ">"})
 
 
-@dataclass
-class Block:
+@dataclass(frozen=True)
+class ParsedBlock:
     left: Token
-    firstline: "Line"
-    tokens: list["Line | Block"]
+    firstline: "ParsedLine"
+    tokens: list["ParsedLine | ParsedBlock"]
     right: Token
     tail: list[Token]
+
+    def ensure_block(self) -> "ParsedBlock":
+        return self
+
+    def ensure_line(self) -> NoReturn:
+        raise self.firstline.tokens[0].to_error("Expected line but found block")
+
+    def get_str(self, index: int) -> str:
+        return self.firstline.get_str(index)
+
+    def get_word(self, index: int) -> str:
+        return self.firstline.get_word(index)
+
+    def has_word(self, text: str) -> bool:
+        return self.firstline.has_word(text)
 
     @property
     def start(self) -> Position:
@@ -48,10 +64,47 @@ class Block:
     def kind(self) -> str:
         return self.firstline.kind
 
+    def getitems(self) -> dict[str, list["ParsedLine | ParsedBlock"]]:
+        items: dict[str, list["ParsedLine | ParsedBlock"]] = {}
+        for line in self.tokens:
+            items.setdefault(line.kind, []).append(line)
+        return items
 
-@dataclass
-class Line:
+
+@dataclass(frozen=True)
+class ParsedLine:
     tokens: list[Token]
+
+    def ensure_line(self) -> "ParsedLine":
+        return self
+
+    def ensure_block(self) -> NoReturn:
+        raise self.tokens[0].to_error("Expected block but found line")
+
+    def get_str(self, index: int) -> str:
+        assert self.tokens
+        tok = self.tokens[index]
+        assert isinstance(tok, Token)
+        if tok.kind != "string":
+            raise self.tokens[index].to_error(f"expected string but got '{tok.kind}'")
+        assert tok.kind == "string", self.tokens[index]
+        return ast.literal_eval(tok.text)
+
+    def get_word(self, index: int) -> str:
+        assert self.tokens
+        tok = self.tokens[index]
+        assert isinstance(tok, Token)
+        if tok.kind != "word":
+            raise self.tokens[index].to_error(f"expected word but got '{tok.kind}'")
+        assert tok.kind == "word", self.tokens[index]
+        return tok.text
+
+    def has_word(self, text: str) -> bool:
+        return any(tok.kind == "word" and tok.text == text for tok in self.tokens)
+
+    @property
+    def text(self) -> str:
+        return " ".join(t.text for t in self.tokens)
 
     @property
     def start(self) -> Position:
@@ -74,7 +127,7 @@ class Line:
         return tok.text
 
 
-def parse_reaper_project(s: str, filename: str = "-") -> Block:
+def parse_reaper_project(s: str, filename: str = "-") -> "RProject":
     mainiterator = match_reaper_parens(iter_reaper_tokens(filename, s))
     try:
         mainparen = next(mainiterator)
@@ -91,25 +144,34 @@ def parse_reaper_project(s: str, filename: str = "-") -> Block:
             continue
         raise extra.to_error(f"unexpected '{extra.kind}' after last '>'")
 
-    def parse_block(parens: Parenthesized, tail: list[Token]) -> Block:
+    def parse_block(parens: Parenthesized, tail: list[Token]) -> ParsedBlock:
         buf: list[Token] = []
-        firstline: Line | None = None
-        tokens: list[Line | Block] = []
+        firstline: ParsedLine | None = None
+        tokens: list[ParsedLine | ParsedBlock] = []
         for token in parens.tokens:
             if isinstance(token, Parenthesized):
                 if buf:
-                    if len(token.tokens) == 1 and isinstance(token.tokens[0], Token) and token.tokens[0].kind == "word":
+                    if (
+                        len(token.tokens) == 1
+                        and isinstance(token.tokens[0], Token)
+                        and token.tokens[0].kind == "word"
+                    ):
                         buf += [token.left, token.tokens[0], token.right]
                         continue
                     raise token.to_error("Parenthesized not at start of line")
                 tokens.append(parse_block(token, []))
                 continue
-            if not buf and tokens and isinstance(tokens[-1], Block) and token.kind == "newline":
+            if (
+                not buf
+                and tokens
+                and isinstance(tokens[-1], ParsedBlock)
+                and token.kind == "newline"
+            ):
                 tokens[-1].tail.append(token)
                 continue
             buf.append(token)
             if token.kind == "newline":
-                line = Line(buf)
+                line = ParsedLine(buf)
                 buf = []
                 if firstline is None:
                     firstline = line
@@ -117,9 +179,71 @@ def parse_reaper_project(s: str, filename: str = "-") -> Block:
                     tokens.append(line)
         assert not buf
         assert firstline is not None
-        return Block(parens.left, firstline, tokens, parens.right, tail)
+        return ParsedBlock(parens.left, firstline, tokens, parens.right, tail)
 
-    return parse_block(mainparen, tail)
+    return RProject(parse_block(mainparen, tail))
+
+
+@dataclass(frozen=True)
+class RSource:
+    inner: ParsedBlock
+
+    @property
+    def path(self) -> str | None:
+        paths = self.inner.getitems().get("FILE", [])
+        assert self.inner.firstline.tokens
+        if len(self.inner.firstline.tokens) < 2:
+            raise self.inner.firstline.tokens[0].to_error("No source type")
+        typetoken = self.inner.firstline.tokens[1]
+        if typetoken.kind != "word":
+            raise typetoken.to_error("Expected source type word")
+        typ = typetoken.text
+        if paths:
+            if typ not in ("WAVE", "FLAC", "MP3", "VIDEO"):
+                raise typetoken.to_error("Unknown type")
+            return paths[0].get_str(1)
+        if typ in ("CLICK", "MIDI"):
+            return None
+        raise typetoken.to_error("Expected FILE for this type of source")
+
+
+@dataclass(frozen=True)
+class RItem:
+    inner: ParsedBlock
+
+    @property
+    def sources(self) -> list[RSource]:
+        return [
+            RSource(line.ensure_block())
+            for line in self.inner.getitems().get("SOURCE", [])
+        ]
+
+
+@dataclass(frozen=True)
+class RTrack:
+    inner: ParsedBlock
+
+    @property
+    def items(self) -> list[RItem]:
+        return [
+            RItem(line.ensure_block()) for line in self.inner.getitems().get("ITEM", [])
+        ]
+
+
+@dataclass(frozen=True)
+class RProject:
+    inner: ParsedBlock
+
+    @property
+    def tracks(self) -> list[RTrack]:
+        return [
+            RTrack(line.ensure_block())
+            for line in self.inner.getitems().get("TRACK", [])
+        ]
+
+    @property
+    def record_path(self) -> str:
+        return self.inner.getitems().get("RECORD_PATH", [])[0].get_str(1)
 
 
 parser = argparse.ArgumentParser()
@@ -128,35 +252,43 @@ parser.add_argument("filename")
 
 def main() -> None:
     args = parser.parse_args()
-    filename: str = args.filename
+    projects: list[ProjectLinks] = []
+    for dirpath, dirs, files in os.walk(args.filename):
+        for f in files:
+            if f.lower().endswith(".rpp"):
+                projects.append(process(os.path.join(dirpath, f)))
 
+
+@dataclass(frozen=True)
+class ProjectLinks:
+    project_path: str
+    record_path: str
+    media_items: list[str]
+
+
+def process(filename: str) -> ProjectLinks:
     seen: set[str] = set()
     with open(filename) as fp:
         try:
             project = parse_reaper_project(fp.read(), filename)
-            for line in project.tokens:
-                if line.kind == "TRACK":
-                    assert isinstance(line, Block)
-                    for line in line.tokens:
-                        if line.kind == "ITEM":
-                            assert isinstance(line, Block)
-                            for line in line.tokens:
-                                if line.kind == "SOURCE":
-                                    assert isinstance(line, Block)
-                                    for line in line.tokens:
-                                        if line.kind == "FILE":
-                                            assert isinstance(line, Line)
-                                            path = ast.literal_eval(line.tokens[1].text)
-                                            if path not in seen:
-                                                seen.add(path)
-                                                print(path)
-                                    continue
+            record_path = project.record_path
+            # media = PurePath(record_path)
+            media_items: list[str] = []
+            for track in project.tracks:
+                for item in track.items:
+                    for source in item.sources:
+                        pathstr = source.path
+                        if pathstr is None:
                             continue
-                    continue
+                        if pathstr not in seen:
+                            # assert media in PurePath(pathstr).parents, (filename, media, pathstr)
+                            seen.add(pathstr)
+                            media_items.append(pathstr)
         except ParsingError as e:
             traceback.print_exc()
             print(e.message_and_input_line())
             raise SystemExit(1)
+    return ProjectLinks(filename, record_path, media_items)
 
 
 if __name__ == "__main__":
