@@ -1,12 +1,10 @@
 import argparse
 import ast
-import os
 import re
-import subprocess
 import traceback
+import typing
 from dataclasses import dataclass
-from pathlib import PurePath
-from typing import Iterable, Iterator, NoReturn, Literal
+from typing import Any, Iterable, Iterator, NoReturn, Literal
 
 import parsing
 from parsing import Parenthesized, Position, Token, ParsingError
@@ -213,7 +211,7 @@ class RSource:
         tok = self.typetoken
         if tok.text in ("CLICK", "MIDI"):
             if paths:
-                raise paths[0].tokens[0].to_error("Unexpected path")
+                raise paths[0].ensure_line().tokens[0].to_error("Unexpected path")
             return None
         if not paths:
             raise tok.to_error("Expected FILE for this type of source")
@@ -265,128 +263,19 @@ parser.add_argument("filename")
 
 def main() -> None:
     args = parser.parse_args()
-    projectlist: list[ProjectLinks] = []
-    if os.path.isfile(args.filename):
-        projectlist.append(process(args.filename))
-    for dirpath, dirs, files in os.walk(args.filename):
-        for filename in files:
-            if filename.lower().endswith(".rpp"):
-                project = process(os.path.join(dirpath, filename))
-                projectlist.append(project)
-    projects: dict[PurePath, list[ProjectLinks]] = {}
-    for project in projectlist:
-        record_path = PurePath(project.project_path).parent / PurePath(project.record_path)
-        projects.setdefault(record_path, []).append(project)
-    uses: dict[PurePath, list[str]] = {}
-    owner: dict[PurePath, PurePath] = {}
-    outsideuses: dict[PurePath, list[PurePath]] = {}
-    for record_path in projects:
-        for dirpath, dirs, files in os.walk(record_path):
-            dirs.sort()
-            files.sort()
-            for filename in files:
-                filepath = record_path / dirpath / filename
-                uses.setdefault(filepath, [])
-                ex = owner.setdefault(filepath, record_path)
-                if ex != record_path:
-                    raise Exception(f"overlapping media dirs: {ex} {record_path} {filepath}")
-        for project in projects[record_path]:
-            project_dir = PurePath(project.project_path).parent
-            for item in project.media_items:
-                itempath = project_dir / PurePath(item)
-                uses.setdefault(itempath, []).append(project.project_path)
-                if record_path not in itempath.parents:
-                    outsideuses.setdefault(record_path, []).append(itempath)
-    record_path_edges: dict[PurePath, set[PurePath]] = {}
-    for record_path, itempaths in outsideuses.items():
-        record_path_edges[record_path] = set(owner[itempath] for itempath in itempaths)
-        print(record_path, "->", *sorted(record_path_edges[record_path]))
-    sizes: dict[PurePath, int] = {}
-    record_path_sizes: dict[PurePath, int] = {record_path: 0 for record_path in projects}
-    outside_record_path: list[tuple[PurePath, int]] = []
-    for path in uses:
-        try:
-            sizes[path] = os.path.getsize(path)
-            if path in owner:
-                record_path_sizes[owner[path]] += sizes[path]
-            else:
-                outside_record_path.append((path, sizes[path]))
-        except FileNotFoundError:
-            sizes[path] = -1
-    sizeinuse = 0
-    sizenotinuse = 0
-    for path in uses:
-        if uses[path]:
-            sizeinuse += sizes[path]
-        else:
-            sizenotinuse += sizes[path]
-        print("\t".join(map(str, (len(uses[path]), sizes[path], path))))
-    statbroken = 0
-    brokennames: set[str] = set()
-    for record_path in sorted(projects, key=lambda p: record_path_sizes[p]):
-        print("===========", f"{record_path_sizes[record_path] / 2**30:.2f} GB -", record_path)
-        for project in projects[record_path]:
-            project_dir = PurePath(project.project_path).parent
-            broken: list[str] = []
-            totsize = 0.0
-            for item in project.media_items:
-                itempath = project_dir / PurePath(item)
-                itemsize = sizes[itempath]
-                if itemsize == -1:
-                    broken.append(item)
-                    brokennames.add(os.path.basename(item))
-                else:
-                    totsize += itemsize / len(uses[itempath])
-            if broken:
-                statbroken += 1
-                print("BROKEN", round(totsize), project.project_path, *broken)
-            else:
-                print(round(totsize), project.project_path)
-    print("===========", "Outside")
-    for path, size in outside_record_path:
-        print(size, path, *uses[path])
-
-    print(f"{statbroken} broken projects, {sizeinuse/2**30:.2f} GB used media, {sizenotinuse/2**30:.2f} GB unused media")
-
-    if brokennames:
-        findargs = ["find", args.filename]
-        for i, nam in enumerate(sorted(brokennames)):
-            if i:
-                findargs.append("-or")
-            findargs += ["-name", nam]
-        subprocess.call(findargs)
-
-
-@dataclass(frozen=True)
-class ProjectLinks:
-    project_path: str
-    record_path: str
-    media_items: list[str]
-
-
-def process(filename: str) -> ProjectLinks:
-    seen: set[str] = set()
-    with open(filename) as fp:
-        try:
-            project = parse_reaper_project(fp.read(), filename)
-            record_path = project.record_path
-            # media = PurePath(record_path)
-            media_items: list[str] = []
-            for track in project.tracks:
-                for item in track.items:
-                    for source in item.sources:
-                        pathstr = source.path
-                        if pathstr is None:
-                            continue
-                        if pathstr not in seen:
-                            # assert media in PurePath(pathstr).parents, (filename, media, pathstr)
-                            seen.add(pathstr)
-                            media_items.append(pathstr)
-        except ParsingError as e:
-            traceback.print_exc()
-            print(e.message_and_input_line())
-            raise SystemExit(1)
-    return ProjectLinks(filename, record_path, media_items)
+    with open(args.filename) as fp:
+        contents = fp.read()
+    try:
+        project = parse_reaper_project(contents, str(args.filename))
+    except ParsingError as e:
+        traceback.print_exc()
+        print(e.message_and_input_line())
+        raise SystemExit(1)
+    print(project.record_path)
+    print([[
+            [source.path for source in item.sources]
+            for item in track.items]
+        for track in project.tracks])
 
 
 if __name__ == "__main__":
