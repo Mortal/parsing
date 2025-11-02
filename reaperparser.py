@@ -1,5 +1,6 @@
 import argparse
 import ast
+import binascii
 import re
 import traceback
 import typing
@@ -46,8 +47,14 @@ class ParsedBlock:
     def get_str(self, index: int) -> str:
         return self.firstline.get_str(index)
 
+    def get_int(self, index: int) -> int:
+        return int(self.get_word(index))
+
     def get_word(self, index: int) -> str:
         return self.firstline.get_word(index)
+
+    def get_word_or_str(self, index: int) -> str:
+        return self.firstline.get_word_or_str(index)
 
     def has_word(self, text: str) -> bool:
         return self.firstline.has_word(text)
@@ -98,6 +105,20 @@ class ParsedLine:
             raise self.tokens[index].to_error(f"expected word but got '{tok.kind}'")
         assert tok.kind == "word", self.tokens[index]
         return tok.text
+
+    def get_int(self, index: int) -> int:
+        return int(self.get_word(index))
+
+    def get_word_or_str(self, index: int) -> str:
+        assert self.tokens
+        tok = self.tokens[index]
+        assert isinstance(tok, Token)
+        if tok.kind == "word":
+            return tok.text
+        if tok.kind != "string":
+            raise self.tokens[index].to_error(f"expected string but got '{tok.kind}'")
+        assert tok.kind == "string", self.tokens[index]
+        return ast.literal_eval(tok.text)
 
     def has_word(self, text: str) -> bool:
         return any(tok.kind == "word" and tok.text == text for tok in self.tokens)
@@ -231,14 +252,87 @@ class RItem:
 
 
 @dataclass(frozen=True)
+class RVst:
+    inner: ParsedBlock
+
+    @property
+    def metadata(self) -> tuple[str, str, int, bytes]:
+        name = self.inner.get_str(1)
+        sopath = self.inner.get_word(2)
+        n1 = self.inner.get_int(3)
+        assert n1 == 0
+        s1 = self.inner.get_str(4)
+        assert s1 == ""
+        n2 = self.inner.get_int(5)
+        lt = self.inner.firstline.tokens[6]
+        assert lt.text == "<"
+        somedata = self.inner.get_word(7)
+        gt = self.inner.firstline.tokens[8]
+        assert gt.text == ">"
+        s2 = self.inner.get_str(9)
+        assert s2 == ""
+        assert self.inner.firstline.tokens[10].kind == "newline"
+        assert len(self.inner.firstline.tokens) == 11, [
+            t.text for t in self.inner.firstline.tokens
+        ]
+        return name, sopath, n2, binascii.a2b_hex(somedata)
+
+    @property
+    def data(self) -> list[bytes]:
+        d = []
+        for line in self.inner.tokens:
+            assert len(line.tokens) == 2
+            assert line.tokens[1].kind == "newline"
+            d.append(binascii.a2b_base64(line.ensure_line().tokens[0].text))
+        return d
+
+
+@dataclass(frozen=True)
+class RFxChain:
+    inner: ParsedBlock | None
+
+    @property
+    def vsts(self) -> list[RVst]:
+        if self.inner is None:
+            return []
+        return [
+            RVst(line.ensure_block()) for line in self.inner.getitems().get("VST", [])
+        ]
+
+
+@dataclass(frozen=True)
 class RTrack:
     inner: ParsedBlock
+
+    @property
+    def uuid(self) -> str:
+        w = self.inner.get_word(1)
+        assert w.startswith("{") and w.endswith("}")
+        return w[1:-1]
+
+    @property
+    def name(self) -> str:
+        return self.inner.getitems().get("NAME", [])[0].ensure_line().get_word_or_str(1)
 
     @property
     def items(self) -> list[RItem]:
         return [
             RItem(line.ensure_block()) for line in self.inner.getitems().get("ITEM", [])
         ]
+
+    @property
+    def fxchain(self) -> RFxChain:
+        chains = self.inner.getitems().get("FXCHAIN", [])
+        if not chains:
+            return RFxChain(None)
+        if len(chains) > 1:
+            raise (
+                chains[1]
+                .ensure_block()
+                .firstline.tokens[0]
+                .to_error("Track has more than one FXCHAIN")
+            )
+        return RFxChain(chains[0].ensure_block())
 
 
 @dataclass(frozen=True)
@@ -267,15 +361,25 @@ def main() -> None:
         contents = fp.read()
     try:
         project = parse_reaper_project(contents, str(args.filename))
+        print(project.record_path)
+        for track in project.tracks:
+            print("TRACK", track.uuid, track.name)
+            for vst in track.fxchain.vsts:
+                print(vst.metadata)
+                if vst.metadata[1] == "reaverb.vst.so":
+                    print(vst.data[2])
+                if vst.metadata[1] == "libsitala.so":
+                    print("".join(d.decode() for d in vst.data[3:-1]))
+        print(
+            [
+                [[source.path for source in item.sources] for item in track.items]
+                for track in project.tracks
+            ]
+        )
     except ParsingError as e:
         traceback.print_exc()
         print(e.message_and_input_line())
         raise SystemExit(1)
-    print(project.record_path)
-    print([[
-            [source.path for source in item.sources]
-            for item in track.items]
-        for track in project.tracks])
 
 
 if __name__ == "__main__":
