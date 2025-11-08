@@ -60,43 +60,6 @@ def main() -> None:
         projsize, projpath, projid = max(size_and_path)
         if outproj:
             print(f"{humansize(outproj)} unused media in mediadir '{mediapath}'")
-        if projsize > inproj:
-            cur.execute(
-                """
-            SELECT files.size, files.path
-            FROM projects
-            JOIN project_files ON project_files.project = projects.id
-            JOIN files ON project_files.file = files.id
-            JOIN mediadir_files ON mediadir_files.file = files.id
-            WHERE projects.id = ?
-            AND mediadir_files.mediadir = projects.mediadir
-            """,
-                (projid,),
-            )
-            print(projsize)
-            ts = 0
-            for row in cur.fetchall():
-                ts += row[0]
-                print(*row)
-            assert ts == projsize
-            cur.execute(
-                """
-            SELECT DISTINCT files.id, files.size, files.path
-            FROM files
-            JOIN project_files ON project_files.project = projects.id
-            JOIN projects ON project_files.project = projects.id
-            JOIN mediadir_files ON mediadir_files.file = files.id
-            WHERE projects.mediadir = ?
-            AND mediadir_files.mediadir = projects.mediadir
-            """,
-                (mediadirid,),
-            )
-            print(inproj)
-            ts = 0
-            for row in cur.fetchall():
-                ts += row[1]
-                print(*row)
-            assert ts == inproj
         assert projsize <= inproj
         if projsize != inproj:
             print(f"{humansize(inproj - projsize)} used in smaller projects but not the largest project in mediadir '{mediapath}' '{projpath}'")
