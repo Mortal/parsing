@@ -15,16 +15,30 @@ def main() -> None:
     for mediadirid, mediapath in list(cur.fetchall()):
         cur.execute(
             """
-        SELECT SUM(files.size), projects.path
+        SELECT SUM(files.size), projects.path, projects.id
         FROM projects
-        LEFT JOIN project_files ON project_files.project = projects.id
-        LEFT JOIN files ON project_files.file = files.id
+        JOIN project_files ON project_files.project = projects.id
+        JOIN files ON project_files.file = files.id
+        JOIN mediadir_files ON mediadir_files.file = files.id
         WHERE projects.mediadir = ?
+        AND mediadir_files.mediadir = projects.mediadir
         GROUP BY projects.id
         """,
             (mediadirid,),
         )
-        size_and_path: list[tuple[int, str]] = sorted(cur.fetchall())
+        size_and_path: list[tuple[int, str, int]] = sorted(cur.fetchall())
+        if not size_and_path:
+            cur.execute(
+                """
+            SELECT 0, projects.path, projects.id
+            FROM projects
+            WHERE projects.mediadir = ?
+            """,
+                (mediadirid,),
+            )
+            size_and_path = sorted(cur.fetchall())
+        if not size_and_path:
+            print(mediadirid, mediapath)
         assert size_and_path
         cur.execute(
             """
@@ -43,7 +57,69 @@ def main() -> None:
         totsize: dict[bool, int] = dict(cur.fetchall())
         inproj = totsize.get(True, 0)
         outproj = totsize.get(False, 0)
-        print(outproj, mediapath, inproj, max(size_and_path))
+        projsize, projpath, projid = max(size_and_path)
+        if outproj:
+            print(f"{humansize(outproj)} unused media in mediadir '{mediapath}'")
+        if projsize > inproj:
+            cur.execute(
+                """
+            SELECT files.size, files.path
+            FROM projects
+            JOIN project_files ON project_files.project = projects.id
+            JOIN files ON project_files.file = files.id
+            JOIN mediadir_files ON mediadir_files.file = files.id
+            WHERE projects.id = ?
+            AND mediadir_files.mediadir = projects.mediadir
+            """,
+                (projid,),
+            )
+            print(projsize)
+            ts = 0
+            for row in cur.fetchall():
+                ts += row[0]
+                print(*row)
+            assert ts == projsize
+            cur.execute(
+                """
+            SELECT DISTINCT files.id, files.size, files.path
+            FROM files
+            JOIN project_files ON project_files.project = projects.id
+            JOIN projects ON project_files.project = projects.id
+            JOIN mediadir_files ON mediadir_files.file = files.id
+            WHERE projects.mediadir = ?
+            AND mediadir_files.mediadir = projects.mediadir
+            """,
+                (mediadirid,),
+            )
+            print(inproj)
+            ts = 0
+            for row in cur.fetchall():
+                ts += row[1]
+                print(*row)
+            assert ts == inproj
+        assert projsize <= inproj
+        if projsize != inproj:
+            print(f"{humansize(inproj - projsize)} used in smaller projects but not the largest project in mediadir '{mediapath}' '{projpath}'")
+
+    cur.execute(
+        """SELECT projects.path, files.path
+        FROM project_files
+        JOIN projects ON project_files.project = projects.id
+        JOIN files ON project_files.file = files.id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM mediadir_files
+            WHERE mediadir_files.mediadir = projects.mediadir
+            AND mediadir_files.file = files.id
+        )
+        AND project_files.type != "VST"
+        """
+    )
+    for projectpath, filepath in cur.fetchall():
+        print(f"Project '{projectpath}' uses file '{filepath}' not in its media dir")
+
+
+def humansize(bytes: int) -> str:
+    return f"{bytes/2**20:.2f} MB"
 
 
 if __name__ == "__main__":

@@ -46,7 +46,8 @@ def main() -> None:
     CREATE TABLE project_files (
         id INTEGER PRIMARY KEY,
         project INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-        file INTEGER REFERENCES files(id) ON DELETE CASCADE);
+        file INTEGER REFERENCES files(id) ON DELETE CASCADE,
+        type TEXT);
     """)
     cur = conn.cursor()
 
@@ -96,11 +97,18 @@ def main() -> None:
             )
             projectid = cur.lastrowid
             assert projectid
-            for item in project.media_items:
+            for item, typ in project.media_items:
                 itempath = project_dir / item
+                if itempath not in fileid:
+                    cur.execute(
+                        "INSERT INTO files (path, size) VALUES (?, ?)",
+                        (str(itempath), os.path.getsize(itempath)),
+                    )
+                    assert cur.lastrowid
+                    fileid[itempath] = cur.lastrowid
                 cur.execute(
-                    "INSERT INTO project_files (project, file) VALUES (?, ?)",
-                    (projectid, fileid[itempath]),
+                    "INSERT INTO project_files (project, file, type) VALUES (?, ?, ?)",
+                    (projectid, fileid[itempath], typ),
                 )
     cur.close()
     conn.commit()
@@ -111,7 +119,7 @@ def main() -> None:
 class ProjectLinks:
     project_path: str
     record_path: str
-    media_items: list[str]
+    media_items: list[tuple[str, str]]
 
 
 def process(filename: PathLike) -> ProjectLinks:
@@ -122,8 +130,16 @@ def process(filename: PathLike) -> ProjectLinks:
         project = parse_reaper_project(contents, str(filename))
         record_path = project.record_path
         # media = PurePath(record_path)
-        media_items: list[str] = []
+        media_items: list[tuple[str, str]] = []
         for track in project.tracks:
+            for vst in track.fxchain.vsts:
+                vst_reaverb = vst.as_reaverb()
+                if vst_reaverb is not None:
+                    pathstr: str | None = vst_reaverb.path
+                    assert pathstr is not None
+                    if pathstr not in seen:
+                        seen.add(pathstr)
+                        media_items.append((pathstr, "VST"))
             for item in track.items:
                 for source in item.sources:
                     pathstr = source.path
@@ -132,7 +148,7 @@ def process(filename: PathLike) -> ProjectLinks:
                     if pathstr not in seen:
                         # assert media in PurePath(pathstr).parents, (filename, media, pathstr)
                         seen.add(pathstr)
-                        media_items.append(pathstr)
+                        media_items.append((pathstr, source.type))
     except ParsingError as e:
         traceback.print_exc()
         print(e.message_and_input_line())

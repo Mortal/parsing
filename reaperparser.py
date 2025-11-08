@@ -1,7 +1,11 @@
 import argparse
 import ast
 import binascii
+import os
 import re
+import struct
+import subprocess
+import sys
 import traceback
 import typing
 from dataclasses import dataclass
@@ -255,6 +259,14 @@ class RItem:
 class RVst:
     inner: ParsedBlock
 
+    def is_reaverb(self) -> bool:
+        return self.metadata[1] == "reaverb.vst.so"
+
+    def as_reaverb(self) -> "RVstReaverb | None":
+        if self.is_reaverb():
+            return RVstReaverb(self)
+        return None
+
     @property
     def metadata(self) -> tuple[str, str, int, bytes]:
         name = self.inner.get_str(1)
@@ -285,6 +297,27 @@ class RVst:
             assert line.tokens[1].kind == "newline"
             d.append(binascii.a2b_base64(line.ensure_line().tokens[0].text))
         return d
+
+
+@dataclass(frozen=True)
+class RVstReaverb:
+    inner: RVst
+
+    @property
+    def path(self) -> str:
+        vst_data = b"".join(self.inner.data)
+        sz, = struct.unpack_from("<i", vst_data, 0x30)
+        if 0x6c + 4 > 0x34 + sz:
+            sys.stdout.flush()
+            subprocess.run(("hexdump", "-C"), input=vst_data)
+        assert 0x6c + 4 <= 0x34 + sz, hex(sz)
+        sz2, = struct.unpack_from("<i", vst_data, 0x6c)
+        assert sz2 > 4
+        nul = vst_data.find(b"\0", 0x6c + 8, 0x6c + 4 + sz2)
+        if nul == -1:
+            nul = 0x6c + 4 + sz2
+        assert nul >= 0x6c + 8
+        return vst_data[0x6c + 8 : nul].decode()
 
 
 @dataclass(frozen=True)
@@ -357,25 +390,39 @@ parser.add_argument("filename")
 
 def main() -> None:
     args = parser.parse_args()
-    with open(args.filename) as fp:
+    if os.path.isfile(args.filename):
+        main_process(args.filename)
+    else:
+        for dirpath, dirs, files in os.walk(args.filename):
+            dirs.sort()
+            files.sort()
+            for filename in files:
+                path = os.path.join(dirpath, filename)
+                ext = filename.lower()
+                if ext.endswith(".rpp"):
+                    main_process(path)
+
+
+seen: set[bytes] = set()
+
+def main_process(path: str) -> None:
+    with open(path) as fp:
         contents = fp.read()
     try:
-        project = parse_reaper_project(contents, str(args.filename))
-        print(project.record_path)
+        project = parse_reaper_project(contents, str(path))
+        print("record_path:", os.path.join(os.path.dirname(path), project.record_path))
         for track in project.tracks:
-            print("TRACK", track.uuid, track.name)
+            print("- track:", track.uuid, track.name)
             for vst in track.fxchain.vsts:
-                print(vst.metadata)
-                if vst.metadata[1] == "reaverb.vst.so":
-                    print(vst.data[2])
+                print("-- vst:", vst.metadata)
+                vst_reaverb = vst.as_reaverb()
+                if vst_reaverb is not None:
+                    print("---", vst_reaverb.path)
                 if vst.metadata[1] == "libsitala.so":
-                    print("".join(d.decode() for d in vst.data[3:-1]))
-        print(
-            [
-                [[source.path for source in item.sources] for item in track.items]
-                for track in project.tracks
-            ]
-        )
+                    print("---", "".join(d.decode() for d in vst.data[3:-1]))
+            for item in track.items:
+                for source in item.sources:
+                    print("-- item source:", source.path)
     except ParsingError as e:
         traceback.print_exc()
         print(e.message_and_input_line())
