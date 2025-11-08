@@ -15,7 +15,7 @@ def main() -> None:
     for mediadirid, mediapath in list(cur.fetchall()):
         cur.execute(
             """
-        SELECT SUM(files.size), projects.path, projects.id
+        SELECT SUM(IFNULL(files.size, 0)), projects.path, projects.id
         FROM projects
         JOIN project_files ON project_files.project = projects.id
         JOIN files ON project_files.file = files.id
@@ -46,7 +46,7 @@ def main() -> None:
             SELECT project_files.file FROM projects
             JOIN project_files ON project_files.project = projects.id
             WHERE projects.mediadir = ?
-        ) AS in_project, SUM(files.size)
+        ) AS in_project, SUM(IFNULL(files.size, 0))
         FROM files
         JOIN mediadir_files ON mediadir_files.file = files.id
         WHERE mediadir_files.mediadir = ?

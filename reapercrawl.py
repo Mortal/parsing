@@ -55,6 +55,7 @@ def main() -> None:
     if os.path.isfile(args.filename):
         projectlist.append(process(args.filename))
     fileid: dict[PurePath, int] = {}
+    projectpaths: list[PurePath] = []
     for dirpath, dirs, files in os.walk(args.filename):
         dirs.sort()
         files.sort()
@@ -67,16 +68,20 @@ def main() -> None:
             assert cur.lastrowid
             fileid[path] = cur.lastrowid
             ext = filename.lower()
-            if ext.endswith(".rpp"):
-                project = process(path)
-                projectlist.append(project)
+            if ext.endswith((".rpp", ".rpp-bak")):
+                projectpaths.append(path)
+    for i, path in enumerate(projectpaths):
+        print(f"\r\x1b[K[{i+1:{len(str(len(projectpaths)))}d}/{len(projectpaths)}] {path}", end="", flush=True)
+        project = process(path)
+        projectlist.append(project)
+    print("", flush=True)
     projects: dict[PurePath, list[ProjectLinks]] = {}
     for project in projectlist:
         record_path = PurePath(project.project_path).parent / PurePath(
             project.record_path
         )
         projects.setdefault(record_path, []).append(project)
-    for record_path in projects:
+    for i, record_path in enumerate(projects):
         cur.execute("INSERT INTO mediadirs (path) VALUES (?)", (str(record_path),))
         mediadirid = cur.lastrowid
         assert mediadirid
@@ -100,9 +105,13 @@ def main() -> None:
             for item, typ in project.media_items:
                 itempath = project_dir / item
                 if itempath not in fileid:
+                    try:
+                        itemsize: int | None = os.path.getsize(itempath)
+                    except FileNotFoundError:
+                        itemsize = None
                     cur.execute(
                         "INSERT INTO files (path, size) VALUES (?, ?)",
-                        (str(itempath), os.path.getsize(itempath)),
+                        (str(itempath), itemsize),
                     )
                     assert cur.lastrowid
                     fileid[itempath] = cur.lastrowid
