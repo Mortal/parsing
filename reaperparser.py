@@ -42,6 +42,9 @@ class ParsedBlock:
     right: Token
     tail: list[Token]
 
+    def __repr__(self) -> str:
+        return f"<ParsedBlock '{self.firstline}'>"
+
     def ensure_block(self) -> "ParsedBlock":
         return self
 
@@ -85,6 +88,12 @@ class ParsedBlock:
 @dataclass(frozen=True)
 class ParsedLine:
     tokens: list[Token]
+
+    def __repr__(self) -> str:
+        return f"<ParsedLine '{self}'>"
+
+    def __str__(self) -> str:
+        return " ".join(t.text.strip() for t in self.tokens).strip()
 
     def ensure_line(self) -> "ParsedLine":
         return self
@@ -248,6 +257,20 @@ class RItem:
     inner: ParsedBlock
 
     @property
+    def ypos(self) -> tuple[float, float, int] | None:
+        "Cursed property indicating lane position"
+        lines = self.inner.getitems().get("YPOS")
+        if not lines:
+            return None
+        line_, = lines
+        line = line_.ensure_line()
+        return float(line.get_word(1)), float(line.get_word(2)), line.get_int(3)
+
+    @property
+    def mute(self) -> bool:
+        return self.inner.getitems()["MUTE"][0].ensure_line().get_int(1) != 0
+
+    @property
     def sources(self) -> list[RSource]:
         return [
             RSource(line.ensure_block())
@@ -333,9 +356,29 @@ class RFxChain:
         ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class ItemInfo:
+    lane: int
+    in_muted_lane: bool
+
+
 @dataclass(frozen=True)
 class RTrack:
     inner: ParsedBlock
+
+    @property
+    def mutesolo(self) -> tuple[int, int, int]:
+        item, = self.inner.getitems()["MUTESOLO"]
+        line = item.ensure_line()
+        return line.get_int(1), line.get_int(2), line.get_int(3)
+
+    @property
+    def mute(self) -> bool:
+        return self.mutesolo[0] != 0
+
+    @property
+    def solo(self) -> bool:
+        return self.mutesolo[1] != 0
 
     @property
     def uuid(self) -> str:
@@ -348,10 +391,70 @@ class RTrack:
         return self.inner.getitems().get("NAME", [])[0].ensure_line().get_word_or_str(1)
 
     @property
+    def item_info(self) -> list[tuple[RItem, ItemInfo]]:
+        lanes = self.itemlanes or 1
+        lanesolo = (self.lanesolo or [1])[0]
+        items: list[tuple[RItem, ItemInfo]] = []
+        for line in self.inner.getitems().get("ITEM", []):
+            item = RItem(line.ensure_block()) 
+            ypos = item.ypos
+            if ypos:
+                ystart, yheight, _ = ypos
+                lane = int((ystart + yheight / 2) * lanes)
+            else:
+                lane = 0
+            in_muted_lane = not (lanesolo & (1 << lane))
+            info = ItemInfo(lane=lane, in_muted_lane=in_muted_lane)
+            items.append((item, info))
+        return items
+
+    @property
     def items(self) -> list[RItem]:
         return [
             RItem(line.ensure_block()) for line in self.inner.getitems().get("ITEM", [])
         ]
+
+    @property
+    def itemlanes(self) -> int | None:
+        lines = self.inner.getitems().get("ITEMLANES")
+        if not lines:
+            return None
+        line, = lines
+        return line.ensure_line().get_int(1)
+
+    @property
+    def lanename(self) -> list[str] | None:
+        lines = self.inner.getitems()["LANENAME"]
+        n = self.itemlanes
+        if not lines:
+            assert n is None
+            return None
+        assert n is not None
+        line, = lines
+        line_ = line.ensure_line()
+        return [line_.get_word_or_str(i) for i in range(1, n + 1)]
+
+    @property
+    def lanesolo(self) -> list[int] | None:
+        "First entry is a bitset of which lanes are playing. Other entries unsure."
+        lines = self.inner.getitems().get("LANESOLO")
+        if not lines:
+            return None
+        line, = lines
+        line_ = line.ensure_line()
+        return [line_.get_int(i) for i in range(1, len(line_.tokens) - 1)]
+
+    @property
+    def isbus(self) -> tuple[int, int]:
+        """(flag: 0/1/2, count: int) where flag=1 is folder,
+        flag=2 is last in folder, count is the change in indentation
+        (positive for flag=1, negative for flag=2)"""
+        line, = self.inner.getitems()["ISBUS"]
+        return line.ensure_line().get_int(1), line.ensure_line().get_int(2)
+
+    @property
+    def has_linkedlane(self) -> bool:
+        return bool(self.inner.getitems().get("LINKEDLANE"))
 
     @property
     def fxchain(self) -> RFxChain:
@@ -368,16 +471,46 @@ class RTrack:
         return RFxChain(chains[0].ensure_block())
 
 
+@dataclass(frozen=True, kw_only=True)
+class FolderInfo:
+    in_muted_folder: bool
+    is_folder: bool
+    is_last_in_folder: bool
+    indent: int
+
+
 @dataclass(frozen=True)
 class RProject:
     inner: ParsedBlock
 
     @property
     def tracks(self) -> list[RTrack]:
-        return [
-            RTrack(line.ensure_block())
-            for line in self.inner.getitems().get("TRACK", [])
-        ]
+        return [t for t, _ in self.track_info]
+
+    @property
+    def track_info(self) -> list[tuple[RTrack, FolderInfo]]:
+        tracks: list[tuple[RTrack, FolderInfo]] = []
+        mutestack: list[bool] = []
+        for line in self.inner.getitems().get("TRACK", []):
+            track = RTrack(line.ensure_block())
+            folderkind, foldercount = track.isbus
+            info = FolderInfo(
+                in_muted_folder=any(mutestack),
+                is_folder=folderkind == 1,
+                is_last_in_folder=folderkind == 2,
+                indent=len(mutestack),
+            )
+            tracks.append((track, info))
+            if foldercount > 0:
+                mute = track.mute
+                for _ in range(foldercount):
+                    mutestack.append(mute)
+            for _ in range(-foldercount):
+                if not mutestack:
+                    # Last track can "end the folder" even though it's not in a folder
+                    continue
+                mutestack.pop()
+        return tracks
 
     @property
     def record_path(self) -> str:
@@ -411,8 +544,24 @@ def main_process(path: str) -> None:
     try:
         project = parse_reaper_project(contents, str(path))
         print("record_path:", os.path.join(os.path.dirname(path), project.record_path))
-        for track in project.tracks:
-            print("- track:", track.uuid, track.name)
+        for track, info in project.track_info:
+            trackinfo = [track.name]
+            if info.is_folder:
+                trackinfo.append("(folder)")
+            elif info.is_last_in_folder:
+                trackinfo.append("(last in folder)")
+            mute = track.mute
+            if mute:
+                trackinfo.append("MUTE")
+            elif info.in_muted_folder:
+                trackinfo.append("MUTEFOLDER")
+            if track.solo:
+                trackinfo.append("SOLO")
+            if track.has_linkedlane:
+                trackinfo.append("COMP")
+            elif track.itemlanes:
+                trackinfo.append("LANES")
+            print("- track:", track.uuid, *trackinfo)
             for vst in track.fxchain.vsts:
                 print("-- vst:", vst.metadata)
                 vst_reaverb = vst.as_reaverb()
@@ -420,9 +569,10 @@ def main_process(path: str) -> None:
                     print("---", vst_reaverb.path)
                 if vst.metadata[1] == "libsitala.so":
                     print("---", "".join(d.decode() for d in vst.data[3:-1]))
-            for item in track.items:
+            for item, info2 in track.item_info:
+                iteminfo = ["MUTE"] if item.mute else ["MUTELANE"] if info2.in_muted_lane else []
                 for source in item.sources:
-                    print("-- item source:", source.path)
+                    print("-- item in lane", info2.lane, "source:", *iteminfo, source.path)
     except ParsingError as e:
         traceback.print_exc()
         print(e.message_and_input_line())

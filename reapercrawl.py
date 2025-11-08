@@ -36,18 +36,23 @@ def main() -> None:
         check_and_delete_existing(args.output)
     conn = sqlite3.connect(args.output)
     conn.executescript("""
-    CREATE TABLE files (id INTEGER PRIMARY KEY, path TEXT UNIQUE, size INT);
+    CREATE TABLE files (id INTEGER PRIMARY KEY, path TEXT UNIQUE, size INTEGER);
     CREATE TABLE mediadirs (id INTEGER PRIMARY KEY, path TEXT UNIQUE);
     CREATE TABLE mediadir_files (
         id INTEGER PRIMARY KEY,
         mediadir INTEGER REFERENCES mediadirs(id) ON DELETE CASCADE,
         file INTEGER REFERENCES files(id) ON DELETE CASCADE);
-    CREATE TABLE projects (id INTEGER PRIMARY KEY, path TEXT UNIQUE, mediadir INTEGER);
+    CREATE TABLE projects (
+        id INTEGER PRIMARY KEY,
+        path TEXT UNIQUE,
+        mediadir INTEGER,
+        is_backup INTEGER);
     CREATE TABLE project_files (
         id INTEGER PRIMARY KEY,
         project INTEGER REFERENCES projects(id) ON DELETE CASCADE,
         file INTEGER REFERENCES files(id) ON DELETE CASCADE,
-        type TEXT);
+        type TEXT,
+        muted INTEGER);
     """)
     cur = conn.cursor()
 
@@ -96,14 +101,15 @@ def main() -> None:
                 )
         for project in projects[record_path]:
             project_dir = PurePath(project.project_path).parent
+            is_backup = project.project_path.lower().endswith(".rpp-bak")
             cur.execute(
-                "INSERT INTO projects (path, mediadir) VALUES (?, ?)",
-                (project.project_path, mediadirid),
+                "INSERT INTO projects (path, mediadir, is_backup) VALUES (?, ?, ?)",
+                (project.project_path, mediadirid, is_backup),
             )
             projectid = cur.lastrowid
             assert projectid
-            for item, typ in project.media_items:
-                itempath = project_dir / item
+            for item in project.media_items:
+                itempath = project_dir / item.path
                 if itempath not in fileid:
                     try:
                         itemsize: int | None = os.path.getsize(itempath)
@@ -116,8 +122,8 @@ def main() -> None:
                     assert cur.lastrowid
                     fileid[itempath] = cur.lastrowid
                 cur.execute(
-                    "INSERT INTO project_files (project, file, type) VALUES (?, ?, ?)",
-                    (projectid, fileid[itempath], typ),
+                    "INSERT INTO project_files (project, file, type, muted) VALUES (?, ?, ?, ?)",
+                    (projectid, fileid[itempath], item.type, item.muted),
                 )
     cur.close()
     conn.commit()
@@ -125,10 +131,17 @@ def main() -> None:
 
 
 @dataclass(frozen=True)
+class MediaItem:
+    path: str
+    type: str
+    muted: bool
+
+
+@dataclass(frozen=True)
 class ProjectLinks:
     project_path: str
     record_path: str
-    media_items: list[tuple[str, str]]
+    media_items: list[MediaItem]
 
 
 def process(filename: PathLike) -> ProjectLinks:
@@ -139,8 +152,8 @@ def process(filename: PathLike) -> ProjectLinks:
         project = parse_reaper_project(contents, str(filename))
         record_path = project.record_path
         # media = PurePath(record_path)
-        media_items: list[tuple[str, str]] = []
-        for track in project.tracks:
+        media_items: list[MediaItem] = []
+        for track, trackinfo in project.track_info:
             for vst in track.fxchain.vsts:
                 vst_reaverb = vst.as_reaverb()
                 if vst_reaverb is not None:
@@ -148,8 +161,9 @@ def process(filename: PathLike) -> ProjectLinks:
                     assert pathstr is not None
                     if pathstr not in seen:
                         seen.add(pathstr)
-                        media_items.append((pathstr, "VST"))
-            for item in track.items:
+                        media_items.append(MediaItem(pathstr, "VST", False))
+            for item, iteminfo in track.item_info:
+                muted = track.mute or trackinfo.in_muted_folder or item.mute or iteminfo.in_muted_lane
                 for source in item.sources:
                     pathstr = source.path
                     if pathstr is None:
@@ -157,7 +171,7 @@ def process(filename: PathLike) -> ProjectLinks:
                     if pathstr not in seen:
                         # assert media in PurePath(pathstr).parents, (filename, media, pathstr)
                         seen.add(pathstr)
-                        media_items.append((pathstr, source.type))
+                        media_items.append(MediaItem(pathstr, source.type, muted))
     except ParsingError as e:
         traceback.print_exc()
         print(e.message_and_input_line())
