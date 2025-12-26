@@ -242,7 +242,8 @@ class IterParenthesized:
         for t in self.tokens:
             toks.append(right)
             right = t.collect() if isinstance(t, IterParenthesized) else t
-        assert isinstance(right, Token)
+        if not isinstance(right, Token):
+            raise right.to_error("BUG: not a token?")
         return Parenthesized(self.left, toks, right)
 
     @property
