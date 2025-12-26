@@ -240,24 +240,43 @@ def plug_select_argument(vim) -> None:
     row1, col1 = vim.current.window.cursor
     row2, col2 = row1, col1
 
-    def visit_line(tokens: Sequence[Token | Parenthesized]) -> Span | None:
+    def visit_line(tokens: Sequence[Token | Parenthesized], in_call: bool) -> Span | None:
         p = LineParser(tokens).skip_whitespace()
         if not p.has_next:
+            raise Exception(str(tokens))
             return
         a = p.next.start
+        maybe_kw = True
         while p.has_next:
             n = p.skip()
-            r1, c1 = n.start.lineno, n.start.column
+            if maybe_kw and n.kind != "name":
+                if n.text == "=":
+                    a = p.next.start
+                maybe_kw = False
+            if n.text == ",":
+                if not p.has_next:
+                    break
+                a = p.next.start
+                maybe_kw = True
+                continue
             r2, c2 = n.end.lineno, n.end.column
-            if not (row2, col2) <= (r2, c2):
-                return None
-            if (r1, c1) <= (row1, col1):
+            if (row1, col1) <= (r2, c2):
                 if isinstance(n, Parenthesized):
-                    return visit_line(n.tokens[1:-1])
-                return visit_binop(n)
+                    res = visit_line(n.tokens, in_call=n.left.text == "(")
+                    if res is not None:
+                        return res
+                if not in_call:
+                    return None
+                b = n.end
+                while n.text != ",":
+                    b = n.end
+                    if not p.has_next:
+                        break
+                    n = p.skip()
+                return Span(a, b)
         return None
 
-    sp = visit_line(myline.tokens)
+    sp = visit_line(myline.tokens, in_call=False)
     if sp is None:
         return
     r1, c1 = sp.start.lineno, sp.start.column
