@@ -325,16 +325,27 @@ def select_matching_block(vim, matcher: Callable[[LineParser], bool]) -> None:
                 cur = next(it, None)
                 continue
             assert cur.first_non_blank is not None
-            if cur.colon is None:
+            if cur.colon is None and cur.first_non_blank.text != "@":
                 # Not a def or async def cur
                 cur = next(it, None)
+                continue
+            start = cur.start.lineno
+            while cur.first_non_blank.text == "@":
+                cur = next(it, None)
+                if cur is None:
+                    break
+                if not isinstance(cur, Line):
+                    break
+                if cur.colon is None and cur.first_non_blank.text != "@":
+                    break
+            if not isinstance(cur, Line) or cur.colon is None:
+                # Syntax error - skip
                 continue
             p = LineParser(cur.tokens).skip_whitespace()
             if not matcher(p):
                 # Not a block we care about
                 cur = next(it, None)
                 continue
-            start = cur.start.lineno
             cur = next(it, None)
             if isinstance(cur, Block):
                 # Interesting block
