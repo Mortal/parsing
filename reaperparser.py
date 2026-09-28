@@ -9,7 +9,7 @@ import sys
 import traceback
 import typing
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, NoReturn, Literal
+from typing import Any, Iterable, Iterator, NoReturn, Literal, Protocol
 
 import parsing
 from parsing import Parenthesized, Position, Token, ParsingError
@@ -17,6 +17,7 @@ from parsing import Parenthesized, Position, Token, ParsingError
 reaper_lexer = re.compile(
     r"""
 (?P<op>[<>])
+|(?P<code>\|.*)
 |(?P<word>[^\s<>"]+)
 |(?P<string>"(?:\\.|[^"\\])*")
 |(?P<newline>\r\n|\n)
@@ -41,6 +42,14 @@ class ParsedBlock:
     tokens: list["ParsedLine | ParsedBlock"]
     right: Token
     tail: list[Token]
+
+    def visit_tokens(self) -> Iterator[Token]:
+        yield self.left
+        yield from self.firstline.visit_tokens()
+        for token in self.tokens:
+            yield from token.visit_tokens()
+        yield self.right
+        yield from self.tail
 
     def __repr__(self) -> str:
         return f"<ParsedBlock '{self.firstline}'>"
@@ -94,6 +103,9 @@ class ParsedLine:
 
     def __str__(self) -> str:
         return " ".join(t.text.strip() for t in self.tokens).strip()
+
+    def visit_tokens(self) -> Iterator[Token]:
+        yield from self.tokens
 
     def ensure_line(self) -> "ParsedLine":
         return self
@@ -211,16 +223,23 @@ def parse_reaper_project(s: str, filename: str = "-") -> "RProject":
                     firstline = line
                 else:
                     tokens.append(line)
-        assert not buf
+        assert not buf, buf[0].start
         assert firstline is not None
         return ParsedBlock(parens.left, firstline, tokens, parens.right, tail)
 
     return RProject(parse_block(mainparen, tail))
 
 
+class ReaperNode(Protocol):
+    def visit_reaper(self) -> "Iterator[Token | ReaperNode]": ...
+
+
 @dataclass(frozen=True)
 class RSource:
     inner: ParsedBlock
+
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        return self.inner.visit_tokens()
 
     @property
     def typetoken(self) -> Token:
@@ -256,6 +275,17 @@ class RSource:
 class RItem:
     inner: ParsedBlock
 
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        yield self.inner.left
+        yield from self.inner.firstline.visit_tokens()
+        for line in self.inner.tokens:
+            if line.kind == "SOURCE":
+                yield RSource(line.ensure_block())
+            else:
+                yield from line.visit_tokens()
+        yield self.inner.right
+        yield from self.inner.tail
+
     @property
     def ypos(self) -> tuple[float, float, int] | None:
         "Cursed property indicating lane position"
@@ -281,6 +311,9 @@ class RItem:
 @dataclass(frozen=True)
 class RVst:
     inner: ParsedBlock
+
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        return self.inner.visit_tokens()
 
     def is_reaverb(self) -> bool:
         return self.metadata[1] == "reaverb.vst.so"
@@ -326,6 +359,9 @@ class RVst:
 class RVstReaverb:
     inner: RVst
 
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        yield self.inner
+
     @property
     def path(self) -> str:
         vst_data = b"".join(self.inner.data)
@@ -347,6 +383,19 @@ class RVstReaverb:
 class RFxChain:
     inner: ParsedBlock | None
 
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        if self.inner is None:
+            return
+        yield self.inner.left
+        yield from self.inner.firstline.visit_tokens()
+        for line in self.inner.tokens:
+            if line.kind == "VST":
+                yield RVst(line.ensure_block())
+            else:
+                yield from line.visit_tokens()
+        yield self.inner.right
+        yield from self.inner.tail
+
     @property
     def vsts(self) -> list[RVst]:
         if self.inner is None:
@@ -365,6 +414,19 @@ class ItemInfo:
 @dataclass(frozen=True)
 class RTrack:
     inner: ParsedBlock
+
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        yield self.inner.left
+        yield from self.inner.firstline.visit_tokens()
+        for line in self.inner.tokens:
+            if line.kind == "ITEM":
+                yield RItem(line.ensure_block())
+            elif line.kind == "FXCHAIN":
+                yield RFxChain(line.ensure_block())
+            else:
+                yield from line.visit_tokens()
+        yield self.inner.right
+        yield from self.inner.tail
 
     @property
     def mutesolo(self) -> tuple[int, int, int]:
@@ -482,6 +544,17 @@ class FolderInfo:
 @dataclass(frozen=True)
 class RProject:
     inner: ParsedBlock
+
+    def visit_reaper(self) -> Iterator[Token | ReaperNode]:
+        yield self.inner.left
+        yield from self.inner.firstline.visit_tokens()
+        for line in self.inner.tokens:
+            if line.kind == "TRACK":
+                yield RTrack(line.ensure_block())
+            else:
+                yield from line.visit_tokens()
+        yield self.inner.right
+        yield from self.inner.tail
 
     @property
     def tracks(self) -> list[RTrack]:

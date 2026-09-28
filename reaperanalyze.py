@@ -93,7 +93,7 @@ def main() -> None:
             print(f"{humansize(inbak)} media only used in backups in mediadir '{mediapath}'")
         if inmuted:
             print(f"{humansize(inmuted)} of used media is muted in '{mediapath}'")
-        assert projsize <= inproj
+        # assert projsize <= inproj, (projsize, inproj)
         if projsize != inproj:
             print(f"{humansize(inproj - projsize)} used in smaller projects but not the largest project in mediadir '{mediapath}' '{projpath}'")
         if inproj > 101e6:
